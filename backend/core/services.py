@@ -1,0 +1,729 @@
+"""
+Business logic service layer for REMS.
+All complex logic lives here; views remain thin.
+"""
+
+from django.utils import timezone
+from django.db import transaction
+from django.db.models import Sum, Q
+from datetime import date, timedelta
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def get_client_ip(request):
+    """Extract the real client IP from request headers."""
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        return x_forwarded_for.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR')
+
+
+def get_device_info(request):
+    """Capture basic device fingerprint from User-Agent."""
+    return request.META.get('HTTP_USER_AGENT', 'Unknown Device')[:500]
+
+
+# ── Notification Engine ────────────────────────────────────────────────────────
+class NotificationService:
+    @staticmethod
+    def _send_notifications(sender, recipients_qs, title, message, notif_type):
+        """Internal helper: bulk-create notifications and broadcast over WebSocket."""
+        from .models import Notification
+        notifications = [
+            Notification(
+                recipient=recipient,
+                sender=sender,
+                type=notif_type,
+                title=title,
+                message=message
+            )
+            for recipient in recipients_qs
+        ]
+        if not notifications:
+            return
+        created = Notification.objects.bulk_create(notifications)
+        channel_layer = get_channel_layer()
+        for notif in created:
+            async_to_sync(channel_layer.group_send)(
+                'status_updates',
+                {
+                    'type': 'notification_alert',
+                    'notification_id': str(notif.id),
+                    'recipient_id': str(notif.recipient.id),
+                    'title': notif.title,
+                    'message': notif.message,
+                    'notif_type': notif.type,
+                    'sender_name': sender.full_name
+                }
+            )
+
+    @staticmethod
+    def notify_based_on_role(sender, title, message, notif_type='system'):
+        """
+        Role-aware notification dispatcher:
+        - employee -> notify managers + admins
+        - manager  -> notify admins only
+        - admin    -> notify admins (other admins)
+        """
+        from .models import User
+        if sender.role == 'employee':
+            recipients = User.objects.filter(role__in=['admin', 'manager']).exclude(id=sender.id).distinct()
+        else:
+            # manager or admin: only notify admins
+            recipients = User.objects.filter(role='admin').exclude(id=sender.id).distinct()
+        NotificationService._send_notifications(sender, recipients, title, message, notif_type)
+
+    @staticmethod
+    def notify_managers_and_admins(sender, title, message, notif_type='system'):
+        """Legacy helper – kept for leave/task notifications. Notifies managers + admins."""
+        from .models import User
+        recipients = User.objects.filter(role__in=['admin', 'manager']).exclude(id=sender.id).distinct()
+        NotificationService._send_notifications(sender, recipients, title, message, notif_type)
+
+# ── Attendance Engine ──────────────────────────────────────────────────────────
+
+class AttendanceService:
+    """Core attendance engine. Status derived solely from time calculations."""
+
+    @staticmethod
+    @transaction.atomic
+    def get_or_create_today(user):
+        """Called on login. Creates attendance record for today if not exists."""
+        from .models import Attendance, Holiday
+
+        today = date.today()
+
+        # Check if today is a holiday
+        is_holiday = Holiday.objects.filter(date=today).exists()
+        if is_holiday:
+            default_status = Attendance.STATUS_HOLIDAY
+        else:
+            default_status = Attendance.STATUS_ABSENT
+
+        attendance, created = Attendance.objects.get_or_create(
+            user=user,
+            date=today,
+            defaults={'status': default_status}
+        )
+        return attendance, created
+
+    @staticmethod
+    @transaction.atomic
+    def recalculate_status(attendance):
+        """
+        Recalculate total work/break/idle seconds and set status.
+        Status is NEVER manually set – always derived from time data.
+        """
+        from .models import AttendancePolicy
+
+        # Total work session seconds
+        work_sessions = attendance.work_sessions.filter(end_time__isnull=False)
+        total_work = sum(
+            int((ws.end_time - ws.start_time).total_seconds())
+            for ws in work_sessions
+        )
+
+        # Total break seconds
+        break_sessions = attendance.work_sessions.prefetch_related('break_sessions')
+        total_break = 0
+        for ws in break_sessions:
+            for bs in ws.break_sessions.filter(end_time__isnull=False):
+                total_break += int((bs.end_time - bs.start_time).total_seconds())
+
+        # Total idle seconds
+        total_idle = 0
+        for ws in break_sessions:
+            for il in ws.idle_logs.filter(end_time__isnull=False):
+                total_idle += int((il.end_time - il.start_time).total_seconds())
+
+        # Effective productive seconds
+        effective_seconds = max(0, total_work - total_break - total_idle)
+        effective_hours = effective_seconds / 3600
+
+        # Get policy
+        try:
+            policy = AttendancePolicy.objects.filter(is_active=True).first()
+            min_hours = float(policy.min_working_hours) if policy else 8.0
+            half_day_hours = float(policy.half_day_hours) if policy else 4.0
+            idle_threshold_minutes = policy.idle_threshold_minutes if policy else 15
+        except Exception:
+            min_hours = 8.0
+            half_day_hours = 4.0
+            idle_threshold_minutes = 15
+
+        # Determine status
+        if attendance.status in (
+            attendance.STATUS_ON_LEAVE,
+            attendance.STATUS_HOLIDAY,
+        ):
+            status = attendance.status  # don't override leave/holiday
+        elif effective_hours >= min_hours:
+            status = attendance.STATUS_PRESENT
+        elif effective_hours >= half_day_hours:
+            status = attendance.STATUS_HALF_DAY
+        elif total_work > 0:
+            status = attendance.STATUS_HALF_DAY if effective_hours > 0 else attendance.STATUS_ABSENT
+        else:
+            status = attendance.STATUS_ABSENT
+
+        # Check if exceeds idle threshold (flag anomalies)
+        idle_percentage = (total_idle / total_work * 100) if total_work > 0 else 0
+        should_flag = idle_percentage > 30  # flag if >30% time was idle
+
+        attendance.total_work_seconds = total_work
+        attendance.total_break_seconds = total_break
+        attendance.total_idle_seconds = total_idle
+        attendance.status = status
+        if should_flag and not attendance.is_flagged:
+            attendance.is_flagged = True
+            attendance.flag_reason = f'High idle time: {idle_percentage:.1f}% of work time'
+        attendance.save(update_fields=[
+            'total_work_seconds', 'total_break_seconds', 'total_idle_seconds',
+            'status', 'is_flagged', 'flag_reason', 'updated_at'
+        ])
+        return attendance
+
+
+# ── Work Session Service ───────────────────────────────────────────────────────
+
+class WorkSessionService:
+
+    @staticmethod
+    @transaction.atomic
+    def start_session(user, request):
+        """Start a new work session for the user. Create attendance if needed."""
+        from .models import WorkSession, Attendance
+
+        attendance, _ = AttendanceService.get_or_create_today(user)
+        # Sequence lock on parent attendance to prevent double-click creation races
+        Attendance.objects.select_for_update().get(id=attendance.id)
+
+        # Check if there's already an open session
+        open_session = WorkSession.objects.filter(
+            attendance=attendance,
+            end_time__isnull=True
+        ).first()
+        if open_session:
+            return open_session, False  # already running
+
+        session = WorkSession.objects.create(
+            attendance=attendance,
+            start_time=timezone.now(),
+            ip_address=get_client_ip(request),
+            device_info=get_device_info(request),
+        )
+        AuditService.log(user, 'create', 'Work session started', request)
+        StatusService.broadcast_status_change(user)
+        NotificationService.notify_based_on_role(
+            user, "Shift Started", f"{user.full_name} started their shift.", "status"
+        )
+        return session, True
+
+    @staticmethod
+    @transaction.atomic
+    def stop_session(user):
+        """Stop the active work session and recalculate status."""
+        from .models import WorkSession, Attendance
+
+        attendance, _ = AttendanceService.get_or_create_today(user)
+        # Sequence lock on parent attendance to prevent double-click creation races
+        Attendance.objects.select_for_update().get(id=attendance.id)
+
+        open_session = WorkSession.objects.filter(
+            attendance=attendance,
+            end_time__isnull=True
+        ).first()
+
+        if not open_session:
+            return None, False
+
+        # Also close any open break
+        open_break = open_session.break_sessions.filter(end_time__isnull=True).first()
+        if open_break:
+            open_break.end_time = timezone.now()
+            open_break.save(update_fields=['end_time', 'updated_at'])
+
+        # Close any open idle log
+        open_idle = open_session.idle_logs.filter(end_time__isnull=True).first()
+        if open_idle:
+            open_idle.end_time = timezone.now()
+            open_idle.save(update_fields=['end_time', 'updated_at'])
+
+        open_session.end_time = timezone.now()
+        open_session.save(update_fields=['end_time', 'updated_at'])
+
+        AttendanceService.recalculate_status(attendance)
+        StatusService.broadcast_status_change(user)
+        NotificationService.notify_based_on_role(
+            user, "Shift Ended", f"{user.full_name} clocked out.", "status"
+        )
+        return open_session, True
+
+
+# ── Break Session Service ──────────────────────────────────────────────────────
+
+class BreakSessionService:
+
+    @staticmethod
+    @transaction.atomic
+    def start_break(user):
+        """Start a break within the active work session."""
+        from .models import WorkSession, BreakSession, Attendance
+
+        attendance, _ = AttendanceService.get_or_create_today(user)
+        # Sequence lock on parent attendance to prevent double-click creation races
+        Attendance.objects.select_for_update().get(id=attendance.id)
+
+        open_session = WorkSession.objects.filter(
+            attendance=attendance,
+            end_time__isnull=True
+        ).first()
+
+        if not open_session:
+            raise ValueError('No active work session. Start work first.')
+
+        # Check no break already running
+        existing_break = open_session.break_sessions.filter(end_time__isnull=True).first()
+        if existing_break:
+            return existing_break, False
+
+        break_session = BreakSession.objects.create(
+            work_session=open_session,
+            start_time=timezone.now(),
+        )
+        StatusService.broadcast_status_change(user)
+        NotificationService.notify_based_on_role(
+            user, "On Break", f"{user.full_name} started a break.", "status"
+        )
+        return break_session, True
+
+    @staticmethod
+    @transaction.atomic
+    def stop_break(user):
+        """End the active break."""
+        from .models import WorkSession
+
+        attendance, _ = AttendanceService.get_or_create_today(user)
+        open_session = WorkSession.objects.select_for_update().filter(
+            attendance=attendance,
+            end_time__isnull=True
+        ).first()
+
+        if not open_session:
+            return None, False
+
+        open_break = open_session.break_sessions.filter(end_time__isnull=True).first()
+        if not open_break:
+            return None, False
+
+        open_break.end_time = timezone.now()
+        open_break.save(update_fields=['end_time', 'updated_at'])
+        AttendanceService.recalculate_status(attendance)
+        StatusService.broadcast_status_change(user)
+        NotificationService.notify_based_on_role(
+            user, "Back from Break", f"{user.full_name} returned from break.", "status"
+        )
+        return open_break, True
+
+
+# ── Idle Log Service ───────────────────────────────────────────────────────────
+
+class IdleService:
+
+    @staticmethod
+    @transaction.atomic
+    def start_idle(user):
+        """Log idle start. Called by frontend after 15 min of inactivity."""
+        from .models import WorkSession, IdleLog
+
+        attendance, _ = AttendanceService.get_or_create_today(user)
+        open_session = WorkSession.objects.filter(
+            attendance=attendance,
+            end_time__isnull=True
+        ).first()
+
+        if not open_session:
+            return None, False
+
+        existing_idle = open_session.idle_logs.filter(end_time__isnull=True).first()
+        if existing_idle:
+            return existing_idle, False
+
+        idle_log = IdleLog.objects.create(
+            work_session=open_session,
+            start_time=timezone.now(),
+        )
+        StatusService.broadcast_status_change(user)
+        NotificationService.notify_managers_and_admins(
+            user, "Employee Idle", f"{user.full_name} has been idle.", "system"
+        )
+        return idle_log, True
+
+    @staticmethod
+    @transaction.atomic
+    def stop_idle(user):
+        """Resume from idle. Called when user moves mouse/types."""
+        from .models import WorkSession
+
+        attendance, _ = AttendanceService.get_or_create_today(user)
+        open_session = WorkSession.objects.filter(
+            attendance=attendance,
+            end_time__isnull=True
+        ).first()
+
+        if not open_session:
+            return None, False
+
+        open_idle = open_session.idle_logs.filter(end_time__isnull=True).first()
+        if not open_idle:
+            return None, False
+
+        open_idle.end_time = timezone.now()
+        open_idle.save(update_fields=['end_time', 'updated_at'])
+        AttendanceService.recalculate_status(attendance)
+        StatusService.broadcast_status_change(user)
+        NotificationService.notify_managers_and_admins(
+            user, "Employee Active", f"{user.full_name} is active again.", "system"
+        )
+        return open_idle, True
+
+
+# ── Real-Time Status Service ───────────────────────────────────────────────────
+
+class StatusService:
+
+    @staticmethod
+    def broadcast_status_change(user):
+        """Helper to push the current status of a user over Django Channels."""
+        try:
+            channel_layer = get_channel_layer()
+            status_data = StatusService.get_user_status(user)
+            if channel_layer:
+                async_to_sync(channel_layer.group_send)(
+                    'status_updates',
+                    {
+                        'type': 'status_update',
+                        'user_id': str(user.id),
+                        'status': status_data['status']
+                    }
+                )
+        except Exception as e:
+            logger.error(f"WebSocket broadcast failed: {e}")
+
+    @staticmethod
+    def get_user_status(user):
+        """
+        Return real-time status: online/working/idle/on_break/offline
+        """
+        from .models import WorkSession
+
+        if user.role == 'admin':
+            return {'status': 'working', 'attendance': None, 'session': None}
+
+        today = date.today()
+        attendance = user.attendances.filter(date=today).first()
+        if not attendance:
+            return {'status': 'offline', 'attendance': None}
+
+        open_session = WorkSession.objects.filter(
+            attendance=attendance,
+            end_time__isnull=True
+        ).first()
+
+        if not open_session:
+            return {'status': 'offline', 'attendance': attendance}
+
+        # Check idle
+        open_idle = open_session.idle_logs.filter(end_time__isnull=True).first()
+        if open_idle:
+            return {'status': 'idle', 'attendance': attendance, 'session': open_session}
+
+        # Check break
+        open_break = open_session.break_sessions.filter(end_time__isnull=True).first()
+        if open_break:
+            return {'status': 'on_break', 'attendance': attendance, 'session': open_session}
+
+        return {'status': 'working', 'attendance': attendance, 'session': open_session}
+
+
+# ── Leave Service ──────────────────────────────────────────────────────────────
+
+class LeaveService:
+
+    @staticmethod
+    @transaction.atomic
+    def apply_leave(employee, data, request):
+        """Employee applies for leave."""
+        from .models import LeaveRequest
+
+        leave = LeaveRequest.objects.create(
+            employee=employee,
+            leave_type=data['leave_type'],
+            from_date=data['from_date'],
+            to_date=data['to_date'],
+            reason=data['reason'],
+        )
+        AuditService.log(employee, 'create', f'Leave request submitted: {leave.leave_type}', request)
+        return leave
+
+    @staticmethod
+    @transaction.atomic
+    def review_leave(leave_request, reviewer, action, comment, request):
+        """Manager/Admin approves or rejects leave."""
+        from .models import Attendance, Holiday, LeaveRequest
+
+        if action == 'approve':
+            leave_request.status = LeaveRequest.STATUS_APPROVED
+            # Mark attendance as on_leave for each date
+            d = leave_request.from_date
+            while d <= leave_request.to_date:
+                is_holiday = Holiday.objects.filter(date=d).exists()
+                if not is_holiday:
+                    Attendance.objects.update_or_create(
+                        user=leave_request.employee,
+                        date=d,
+                        defaults={'status': Attendance.STATUS_ON_LEAVE}
+                    )
+                d += timedelta(days=1)
+        elif action == 'reject':
+            leave_request.status = LeaveRequest.STATUS_REJECTED
+        else:
+            raise ValueError(f'Unknown action: {action}')
+
+        leave_request.reviewed_by = reviewer
+        leave_request.review_comment = comment
+        leave_request.reviewed_at = timezone.now()
+        leave_request.save()
+
+        AuditService.log(
+            reviewer, action,
+            f'Leave {action}d for {leave_request.employee.email}: {leave_request.id}',
+            request
+        )
+        return leave_request
+
+
+# ── Reporting Service ──────────────────────────────────────────────────────────
+
+class ReportService:
+
+    @staticmethod
+    def get_attendance_summary(user=None, from_date=None, to_date=None):
+        """Return attendance summary stats."""
+        from .models import Attendance
+
+        qs = Attendance.objects.all()
+        if user:
+            qs = qs.filter(user=user)
+        if from_date:
+            qs = qs.filter(date__gte=from_date)
+        if to_date:
+            qs = qs.filter(date__lte=to_date)
+
+        total = qs.count()
+        present = qs.filter(status='present').count()
+        half_day = qs.filter(status='half_day').count()
+        absent = qs.filter(status='absent').count()
+        on_leave = qs.filter(status='on_leave').count()
+
+        avg_work = qs.aggregate(avg=Sum('total_work_seconds'))['avg'] or 0
+        avg_idle = qs.aggregate(avg=Sum('total_idle_seconds'))['avg'] or 0
+
+        # Calculate Productivity Score (Average over the days)
+        from .services import ProductivityScoringService
+        total_score = 0
+        scored_days = 0
+        
+        # We need the user to calculate the score per day explicitly
+        if user:
+            days = qs.filter(user=user)
+            for d_att in days:
+                score = ProductivityScoringService.calculate_score(user, d_att.date)
+                total_score += score
+                scored_days += 1
+                
+        avg_productivity_score = round(total_score / scored_days) if scored_days > 0 else 0
+
+        return {
+            'total': total,
+            'present': present,
+            'half_day': half_day,
+            'absent': absent,
+            'on_leave': on_leave,
+            'attendance_rate': round(present / total * 100, 1) if total > 0 else 0,
+            'avg_work_hours': round(avg_work / 3600, 2) if total > 0 else 0,
+            'avg_idle_hours': round(avg_idle / 3600, 2) if total > 0 else 0,
+            'productivity_score': avg_productivity_score,
+        }
+
+    @staticmethod
+    def get_daily_data(user=None, days=7):
+        """Return per-day productivity data for charts."""
+        from .models import Attendance
+
+        end = date.today()
+        start = end - timedelta(days=days - 1)
+
+        qs = Attendance.objects.filter(date__range=(start, end))
+        if user:
+            qs = qs.filter(user=user)
+
+        result = []
+        d = start
+        while d <= end:
+            day_qs = qs.filter(date=d)
+            work_s = day_qs.aggregate(s=Sum('total_work_seconds'))['s'] or 0
+            idle_s = day_qs.aggregate(s=Sum('total_idle_seconds'))['s'] or 0
+            break_s = day_qs.aggregate(s=Sum('total_break_seconds'))['s'] or 0
+            
+            daily_score = 0
+            if user:
+                from .services import ProductivityScoringService
+                daily_score = ProductivityScoringService.calculate_score(user, d)
+                
+            result.append({
+                'date': d.strftime('%Y-%m-%d'),
+                'work_hours': round(work_s / 3600, 2),
+                'idle_hours': round(idle_s / 3600, 2),
+                'break_hours': round(break_s / 3600, 2),
+                'productive_hours': round(max(0, work_s - idle_s - break_s) / 3600, 2),
+                'productivity_score': daily_score,
+                'present': day_qs.filter(status='present').count(),
+                'absent': day_qs.filter(status='absent').count(),
+            })
+            d += timedelta(days=1)
+        return result
+
+
+# ── Audit Service ──────────────────────────────────────────────────────────────
+
+class AuditService:
+
+    @staticmethod
+    def log(user, action_type, description, request=None, extra_data=None):
+        """Create an audit log entry."""
+        from .models import AuditLog
+        try:
+            AuditLog.objects.create(
+                user=user,
+                action_type=action_type,
+                description=description,
+                ip_address=get_client_ip(request) if request else None,
+                user_agent=get_device_info(request) if request else '',
+                extra_data=extra_data or {},
+            )
+        except Exception as e:
+            logger.error(f'AuditLog creation failed: {e}')
+
+# ── Productivity & Payroll Services (Phase 10) ─────────────────────────────────
+
+class ProductivityScoringService:
+    @staticmethod
+    def calculate_score(user, target_date=None):
+        """
+        Calculates a daily productivity score (0-100) based on:
+        - Total work hours (vs policy minimum)
+        - Subtracting excessive idle time
+        - Penalty for flagged anomalous behavior (too many breaks, unauthorized apps)
+        """
+        from .models import Attendance, AttendancePolicy, AppUsageLog
+
+        if not target_date:
+            target_date = date.today()
+
+        attendance = Attendance.objects.filter(user=user, date=target_date).first()
+        if not attendance:
+            return 0  # No attendance = 0 score
+
+        # Base score from work hours
+        try:
+            policy = AttendancePolicy.objects.filter(is_active=True).first()
+            min_hours = float(policy.min_working_hours) * 3600 if policy else 8 * 3600
+        except Exception:
+            min_hours = 8 * 3600
+
+        work_sec = attendance.total_work_seconds
+        idle_sec = attendance.total_idle_seconds
+        break_sec = attendance.total_break_seconds
+        
+        # Effective productive seconds
+        productive_sec = max(0, work_sec - idle_sec - break_sec)
+        
+        # Base proportion of minimum hours
+        score = (productive_sec / min_hours) * 100 if min_hours > 0 else 0
+
+        # Penalties: High idle/breaks
+        if attendance.is_flagged:
+            score -= 15  # Flat penalty for anomalies
+
+        # Penalties: Unauthorized Web/App usage (simulated based on app logs)
+        # Assuming app logs > 1 hour of non-work apps penalizes
+        non_work_apps_sec = AppUsageLog.objects.filter(
+            user=user, 
+            timestamp__date=target_date
+        ).aggregate(s=Sum('duration_seconds'))['s'] or 0
+        if non_work_apps_sec > 3600:
+            score -= 10
+
+        return max(0, min(100, round(score)))
+
+
+class PayrollPrepService:
+    @staticmethod
+    def prepare_monthly_payroll(month: int, year: int):
+        """
+        Aggregate attendance, leaves, and expenses for payroll generation.
+        Returns a list of dicts suitable for CSV export via the ExportView.
+        """
+        from .models import User, Attendance, LeaveRequest, Expense
+
+        start_date = date(year, month, 1)
+        if month == 12:
+            end_date = date(year + 1, 1, 1) - timedelta(days=1)
+        else:
+            end_date = date(year, month + 1, 1) - timedelta(days=1)
+
+        payroll_data = []
+        users = User.objects.filter(is_active=True)
+
+        for user in users:
+            # 1. Total Days Worked
+            present_days = Attendance.objects.filter(
+                user=user, 
+                date__range=[start_date, end_date],
+                status__in=[Attendance.STATUS_PRESENT, Attendance.STATUS_HALF_DAY]
+            ).count()
+
+            # 2. Approved Paid Leaves (Assuming all approved leaves are paid for simple calculation)
+            approved_leaves = LeaveRequest.objects.filter(
+                employee=user,
+                status=LeaveRequest.STATUS_APPROVED,
+                from_date__lte=end_date,
+                to_date__gte=start_date
+            )
+            leave_days = sum(l.duration_days for l in approved_leaves)
+
+            # 3. Approved Expenses for Reimbursement
+            approved_expenses = Expense.objects.filter(
+                user=user,
+                status=Expense.STATUS_APPROVED,
+                created_at__date__range=[start_date, end_date]
+            ).aggregate(amount=Sum('amount'))['amount'] or 0.0
+
+            payroll_data.append({
+                'employee_id': str(user.id),
+                'email': user.email,
+                'name': user.full_name,
+                'department': user.department.name if user.department else 'N/A',
+                'role': user.role,
+                'payable_days': present_days + leave_days,
+                'present_days': present_days,
+                'paid_leave_days': leave_days,
+                'reimbursable_expenses': float(approved_expenses)
+            })
+
+        return payroll_data

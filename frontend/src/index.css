@@ -1,0 +1,27 @@
+@import "tailwindcss";
+
+@theme {
+  --color-slate-850: #162032;
+  --color-slate-900: #0f172a;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-900 text-slate-200 antialiased;
+  }
+}
+
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-slate-800;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-600 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-500;
+}
