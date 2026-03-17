@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
-import { format } from 'date-fns';
-import { CalendarIcon, PaperAirplaneIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import { CalendarIcon, PaperAirplaneIcon, TrashIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 const LeaveRequest = () => {
@@ -15,6 +15,11 @@ const LeaveRequest = () => {
     to_date: '',
     reason: ''
   });
+
+  // Date filter state for export
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [exportType, setExportType] = useState('custom');
 
   useEffect(() => {
     fetchMyLeaves();
@@ -30,6 +35,69 @@ const LeaveRequest = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleQuickSelect = (type) => {
+    setExportType(type);
+    const now = new Date();
+    if (type === 'weekly') {
+      setStartDate(format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+      setEndDate(format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+    } else if (type === 'monthly') {
+      setStartDate(format(startOfMonth(now), 'yyyy-MM-dd'));
+      setEndDate(format(endOfMonth(now), 'yyyy-MM-dd'));
+    } else {
+      setStartDate('');
+      setEndDate('');
+    }
+  };
+
+  const handleExport = () => {
+    let rawData = leaves;
+    
+    // If the user picked dates, filter the exported data
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      
+      rawData = leaves.filter(rec => {
+        // A leave might cross dates; usually we check if from_date or to_date overlaps
+        // But for simplicity, we check if the start date of the leave falls in the range
+        const d = new Date(rec.from_date);
+        return d >= start && d <= end;
+      });
+    }
+
+    if (rawData.length === 0) {
+      toast.error('No leave records found for the selected dates');
+      return;
+    }
+
+    const headers = ['Type', 'From Date', 'To Date', 'Duration (Days)', 'Reason', 'Status', 'Reviewed By'];
+    const csvContent = [
+      headers.join(','),
+      ...rawData.map(rec => [
+         rec.leave_type,
+         format(new Date(rec.from_date), 'yyyy-MM-dd'),
+         format(new Date(rec.to_date), 'yyyy-MM-dd'),
+         rec.duration_days,
+         rec.reason.replace(/,/g, ' '), // sanitize commas
+         rec.status,
+         rec.reviewed_by_name || 'N/A'
+      ].map(v => `"${v}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Leave_History_Export_${startDate || 'All'}_to_${endDate || 'All'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Export downloaded successfully!');
   };
 
   const handleSubmit = async (e) => {
@@ -61,28 +129,81 @@ const LeaveRequest = () => {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this leave request?')) return;
+    if (!window.confirm('Are you sure you want to cancel this leave request?')) return;
     try {
-      await api.delete(`/leave/${id}/`);
-      toast.success('Leave deleted successfully');
-      setLeaves(leaves.filter(l => l.id !== id));
+      const res = await api.post(`/leave/${id}/cancel/`);
+      toast.success('Leave cancelled successfully');
+      // Update the local state to show 'cancelled' instead of completely removing it
+      setLeaves(leaves.map(l => l.id === id ? res.data : l));
     } catch (error) {
-      toast.error('Failed to delete leave request');
+      toast.error(error.response?.data?.detail || 'Failed to cancel leave request');
     }
   };
 
   if (loading) return <div className="text-indigo-400">Loading Leaves...</div>;
 
+  // Filter leaves for display: Only show CURRENT WEEK records
+  const now = new Date();
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+  
+  const weeklyLeaves = leaves.filter((leave) => {
+    const leaveStart = new Date(leave.from_date);
+    return isWithinInterval(leaveStart, { start: weekStart, end: weekEnd });
+  });
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-2 bg-indigo-500/20 rounded-lg">
-          <CalendarIcon className="h-6 w-6 text-indigo-400" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-500/20 rounded-lg">
+            <CalendarIcon className="h-6 w-6 text-indigo-400" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Leave Management</h1>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white">Leave Management</h1>
+
+        {/* Export Controls for Leaves */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+          <div className="flex gap-2">
+            <select 
+              value={exportType}
+              onChange={(e) => handleQuickSelect(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="custom">Custom Dates</option>
+              <option value="weekly">This Week</option>
+              <option value="monthly">This Month</option>
+            </select>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+            />
+            <span className="text-slate-500">to</span>
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+            />
+          </div>
+
+          <button 
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4" />
+            Export CSV
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Leave application form */}
         <div className="lg:col-span-1 bg-slate-800/50 border border-slate-700 rounded-2xl p-6 h-fit">
           <h2 className="text-lg font-semibold text-white mb-6">Apply for Leave</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -147,9 +268,10 @@ const LeaveRequest = () => {
           </form>
         </div>
 
+        {/* Leave history table */}
         <div className="lg:col-span-2 bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
           <div className="p-6 border-b border-slate-700">
-            <h2 className="text-lg font-semibold text-white">My Leave History</h2>
+            <h2 className="text-lg font-semibold text-white">This Week's Leave History</h2>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-300">
@@ -163,7 +285,7 @@ const LeaveRequest = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
-                {leaves.map((leave) => (
+                {weeklyLeaves.map((leave) => (
                   <tr key={leave.id} className="hover:bg-slate-700/20 transition-colors">
                     <td className="px-6 py-4 font-medium text-slate-200 capitalize tracking-wide">{leave.leave_type}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-xs text-slate-400 font-mono">
@@ -181,19 +303,23 @@ const LeaveRequest = () => {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={() => handleDelete(leave.id)}
-                        className="p-1.5 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg transition-colors cursor-pointer"
-                        title="Delete Request"
-                      >
-                        <TrashIcon className="h-4 w-4" />
-                      </button>
+                      {leave.status === 'pending' ? (
+                        <button
+                          onClick={() => handleDelete(leave.id)}
+                          className="p-1.5 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 rounded-lg transition-colors cursor-pointer"
+                          title="Cancel Request"
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      ) : (
+                        <span className="text-slate-500 text-xs">-</span>
+                      )}
                     </td>
                   </tr>
                 ))}
-                {leaves.length === 0 && (
+                {weeklyLeaves.length === 0 && (
                   <tr>
-                    <td colSpan="5" className="px-6 py-8 text-center text-slate-500">No past leave requests</td>
+                    <td colSpan="5" className="px-6 py-8 text-center text-slate-500">No leave requests this week</td>
                   </tr>
                 )}
               </tbody>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../../api/axios';
-import { format } from 'date-fns';
-import { UserGroupIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
+import { UserGroupIcon, ArrowPathIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 const STATUS_COLORS = {
@@ -36,6 +36,11 @@ const TeamAttendance = () => {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
 
+  // Date filter state for export
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [exportType, setExportType] = useState('custom');
+
   const fetchTeamAttendance = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -58,6 +63,69 @@ const TeamAttendance = () => {
     return () => clearInterval(interval);
   }, [fetchTeamAttendance]);
 
+  const handleQuickSelect = (type) => {
+    setExportType(type);
+    const now = new Date();
+    if (type === 'weekly') {
+      setStartDate(format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+      setEndDate(format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+    } else if (type === 'monthly') {
+      setStartDate(format(startOfMonth(now), 'yyyy-MM-dd'));
+      setEndDate(format(endOfMonth(now), 'yyyy-MM-dd'));
+    } else {
+      setStartDate('');
+      setEndDate('');
+    }
+  };
+
+  const handleExport = () => {
+    let rawData = attendance;
+    
+    // If the user picked dates, filter the exported data
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      
+      rawData = attendance.filter(rec => {
+        const d = new Date(rec.date);
+        return d >= start && d <= end;
+      });
+    }
+
+    if (rawData.length === 0) {
+      toast.error('No timesheet records found for the selected dates');
+      return;
+    }
+
+    const headers = ['Date', 'Employee Name', 'Email', 'Live Status', 'Attendance Status', 'Work Hours', 'Break (Hours)', 'Idle (Hours)', 'Flagged'];
+    const csvContent = [
+      headers.join(','),
+      ...rawData.map(rec => [
+         format(new Date(rec.date), 'yyyy-MM-dd'),
+         rec.user_name,
+         rec.user_email,
+         rec.live_status || 'offline',
+         rec.status,
+         rec.work_hours,
+         (rec.total_break_seconds / 3600).toFixed(2),
+         (rec.total_idle_seconds / 3600).toFixed(2),
+         rec.is_flagged ? `Yes - ${rec.flag_reason}` : 'No'
+      ].map(v => `"${v}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Team_Timesheet_Export_${startDate || 'All'}_to_${endDate || 'All'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Team timesheet export downloaded successfully!');
+  };
+
   if (loading) return (
     <div className="flex items-center gap-3 text-indigo-400 mt-10">
       <ArrowPathIcon className="h-5 w-5 animate-spin" />
@@ -67,7 +135,7 @@ const TeamAttendance = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between xl:items-start gap-4 mb-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-indigo-500/20 rounded-lg">
             <UserGroupIcon className="h-6 w-6 text-indigo-400" />
@@ -79,19 +147,61 @@ const TeamAttendance = () => {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          {lastUpdated && (
-            <span className="text-xs text-slate-500">
-              Updated {format(lastUpdated, 'hh:mm:ss a')}
-            </span>
-          )}
-          <button
-            onClick={() => fetchTeamAttendance()}
-            className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
-            title="Refresh"
-          >
-            <ArrowPathIcon className="h-4 w-4" />
-          </button>
+        
+        <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4">
+          {/* Export Controls */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
+            <div className="flex gap-2">
+              <select 
+                value={exportType}
+                onChange={(e) => handleQuickSelect(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="custom">Custom Dates</option>
+                <option value="weekly">This Week</option>
+                <option value="monthly">This Month</option>
+              </select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <input 
+                type="date" 
+                value={startDate}
+                onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+              />
+              <span className="text-slate-500">to</span>
+              <input 
+                type="date" 
+                value={endDate}
+                onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+              />
+            </div>
+
+            <button 
+              onClick={handleExport}
+              className="flex items-center gap-2 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              Export CSV
+            </button>
+          </div>
+
+          <div className="flex items-center gap-3 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50 self-end xl:self-auto">
+            {lastUpdated && (
+              <span className="text-xs text-slate-500">
+                Updated {format(lastUpdated, 'hh:mm:ss a')}
+              </span>
+            )}
+            <button
+              onClick={() => fetchTeamAttendance()}
+              className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+              title="Refresh"
+            >
+              <ArrowPathIcon className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -103,10 +213,11 @@ const TeamAttendance = () => {
                 <th className="px-6 py-4 font-semibold tracking-wider">Date</th>
                 <th className="px-6 py-4 font-semibold tracking-wider">Employee</th>
                 <th className="px-6 py-4 font-semibold tracking-wider text-center">Live Status</th>
+                <th className="px-6 py-4 font-semibold tracking-wider text-center">Last Logout</th>
                 <th className="px-6 py-4 font-semibold tracking-wider text-center">Attendance</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-center">Work (h)</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-center">Break (h)</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-center">Idle (h)</th>
+                <th className="px-6 py-4 font-semibold tracking-wider text-right">Work (h)</th>
+                <th className="px-6 py-4 font-semibold tracking-wider text-right">Break (h)</th>
+                <th className="px-6 py-4 font-semibold tracking-wider text-right">Idle (h)</th>
                 <th className="px-6 py-4 font-semibold tracking-wider text-center">Flagged</th>
               </tr>
             </thead>
@@ -129,13 +240,22 @@ const TeamAttendance = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-center">
+                    {record.last_logout ? (
+                      <span className="text-slate-300 font-mono text-sm whitespace-nowrap">
+                        {format(new Date(record.last_logout), 'hh:mm:ss a')}
+                      </span>
+                    ) : (
+                      <span className="text-slate-600">—</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 text-center">
                     <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${ATTENDANCE_COLORS[record.status] || 'bg-slate-500/10 text-slate-400'}`}>
                       {record.status?.replace('_', ' ')}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-center text-emerald-400 font-mono">{record.work_hours}</td>
-                  <td className="px-6 py-4 text-center text-cyan-400 font-mono">{(record.total_break_seconds / 3600).toFixed(2)}</td>
-                  <td className="px-6 py-4 text-center text-amber-400 font-mono">{(record.total_idle_seconds / 3600).toFixed(2)}</td>
+                  <td className="px-6 py-4 text-right text-emerald-400 font-mono">{record.work_hours}</td>
+                  <td className="px-6 py-4 text-right text-cyan-400 font-mono">{(record.total_break_seconds / 3600).toFixed(2)}</td>
+                  <td className="px-6 py-4 text-right text-amber-400 font-mono">{(record.total_idle_seconds / 3600).toFixed(2)}</td>
                   <td className="px-6 py-4 text-center">
                     {record.is_flagged ? (
                       <span className="text-rose-400 font-bold" title={record.flag_reason}>⚑ Yes</span>

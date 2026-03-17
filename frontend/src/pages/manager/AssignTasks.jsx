@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useContext } from 'react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { ClipboardDocumentCheckIcon, PlusIcon, XMarkIcon, PencilSquareIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { ClipboardDocumentCheckIcon, PlusIcon, XMarkIcon, PencilSquareIcon, TrashIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import { AuthContext } from '../../context/AuthContext';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 
 const AssignTasks = () => {
   const { user } = useContext(AuthContext);
@@ -16,6 +17,13 @@ const AssignTasks = () => {
   const [modalMode, setModalMode] = useState('create');
   const [currentTask, setCurrentTask] = useState(null);
   
+  // Date filter state for export
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [exportType, setExportType] = useState('custom');
+  const [exportAssignedTo, setExportAssignedTo] = useState('all');
+  const [exportStatus, setExportStatus] = useState('all');
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -37,7 +45,8 @@ const AssignTasks = () => {
         api.get('/projects/')
       ]);
       setTasks(tasksRes.data.results || tasksRes.data);
-      setUsers(usersRes.data.results || usersRes.data);
+      const allUsers = usersRes.data.results || usersRes.data;
+      setUsers(allUsers.filter(u => u.role === 'employee'));
       setProjects(projectsRes.data.results || projectsRes.data);
     } catch (err) {
       toast.error('Failed to load data');
@@ -116,9 +125,82 @@ const AssignTasks = () => {
     }
   };
 
+  const handleQuickSelect = (type) => {
+    setExportType(type);
+    const now = new Date();
+    if (type === 'weekly') {
+      setStartDate(format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+      setEndDate(format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+    } else if (type === 'monthly') {
+      setStartDate(format(startOfMonth(now), 'yyyy-MM-dd'));
+      setEndDate(format(endOfMonth(now), 'yyyy-MM-dd'));
+    } else {
+      setStartDate('');
+      setEndDate('');
+    }
+  };
+
+  const handleExport = () => {
+    let rawData = tasks;
+    
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      
+      rawData = rawData.filter(t => {
+        // Fallback to created_at if due_date is missing
+        const dateStr = t.due_date || t.created_at || new Date().toISOString();
+        const d = new Date(dateStr);
+        return d >= start && d <= end;
+      });
+    }
+
+    if (exportAssignedTo !== 'all') {
+      if (exportAssignedTo === 'unassigned') {
+        rawData = rawData.filter(t => !t.assigned_to);
+      } else {
+        rawData = rawData.filter(t => String(t.assigned_to) === String(exportAssignedTo));
+      }
+    }
+
+    if (exportStatus !== 'all') {
+      rawData = rawData.filter(t => t.status === exportStatus);
+    }
+
+    if (rawData.length === 0) {
+      toast.error('No tasks found for the selected dates');
+      return;
+    }
+
+    const headers = ['Title', 'Description', 'Assigned To', 'Project', 'Status', 'Deadline'];
+    const csvContent = [
+      headers.join(','),
+      ...rawData.map(t => [
+         (t.title || '').replace(/,/g, ' '),
+         (t.description || '').replace(/\n/g, ' ').replace(/,/g, ' '),
+         t.assigned_to_email || 'Unassigned',
+         t.project_name || 'No Project',
+         t.status.replace('_', ' '),
+         t.due_date ? format(new Date(t.due_date), 'yyyy-MM-dd') : 'No deadline'
+      ].map(v => `"${v}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Assigned_Tasks_Export_${startDate || 'All'}_to_${endDate || 'All'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Tasks exported successfully!');
+  };
+
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
             <ClipboardDocumentCheckIcon className="h-6 w-6 text-indigo-400" />
@@ -126,13 +208,78 @@ const AssignTasks = () => {
           </h2>
           <p className="text-slate-400 mt-1">Manage and assign tasks to your team members.</p>
         </div>
-        <button 
-          onClick={() => openModal('create')}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-colors"
-        >
-          <PlusIcon className="h-5 w-5" />
-          Assign New Task
-        </button>
+        
+        <div className="flex flex-col xl:flex-row items-start xl:items-center gap-3">
+          {/* Export Controls */}
+          <div className="flex flex-col md:flex-row flex-wrap items-start md:items-center gap-3 bg-slate-800/50 p-2 rounded-xl border border-slate-700/50">
+            <div className="flex gap-2 flex-wrap">
+              <select 
+                value={exportAssignedTo}
+                onChange={(e) => setExportAssignedTo(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">All Employees</option>
+                <option value="unassigned">Unassigned</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.full_name || u.email}</option>
+                ))}
+              </select>
+
+              <select 
+                value={exportStatus}
+                onChange={(e) => setExportStatus(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">All Statuses</option>
+                <option value="todo">To Do</option>
+                <option value="in_progress">In Progress</option>
+                <option value="done">Done</option>
+              </select>
+
+              <select 
+                value={exportType}
+                onChange={(e) => handleQuickSelect(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="custom">Custom</option>
+                <option value="weekly">This Week</option>
+                <option value="monthly">This Month</option>
+              </select>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <input 
+                type="date" 
+                value={startDate}
+                onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+              />
+              <span className="text-slate-500 text-sm">to</span>
+              <input 
+                type="date" 
+                value={endDate}
+                onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+              />
+            </div>
+
+            <button 
+              onClick={handleExport}
+              className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              Export
+            </button>
+          </div>
+
+          <button 
+            onClick={() => openModal('create')}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-colors whitespace-nowrap"
+          >
+            <PlusIcon className="h-5 w-5" />
+            Assign New Task
+          </button>
+        </div>
       </div>
 
       <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">

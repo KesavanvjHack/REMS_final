@@ -521,48 +521,89 @@ class TeamStatusView(APIView):
         return Response(result)
 
 
-class TeamTimesheetView(generics.ListAPIView):
+class TeamTimesheetView(APIView):
     """
     Module 8 Extension: Manager-scoped team timesheet.
-    Returns today's attendance records for employees whose manager
-    is the logged-in user (employee__manager = request.user).
-    For admins, returns ALL records for today.
-    Also annotates each record with the employee's live real-time status.
+    Returns today's attendance records for all employees.
+    If no attendance exists for an active employee, a dummy 'absent' record is generated.
     """
-    serializer_class = AttendanceSerializer
     permission_classes = [IsManager]
-    filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = ['date', 'status', 'is_flagged']
-    ordering = ['-date']
 
-    def get_queryset(self):
-        user = self.request.user
-        qs = Attendance.objects.select_related('user', 'user__department', 'reviewed_by')
-        if user.role == 'admin':
-            # Admin sees everyone
-            return qs.all()
-        # Manager sees only their direct reports
-        return qs.filter(user__manager=user)
+    def get(self, request):
+        user = request.user
+        
+        # Managers and Admins should see all employees
+        team = User.objects.filter(is_active=True, role='employee').select_related('department')
 
-    def list(self, request, *args, **kwargs):
-        queryset = self.filter_queryset(self.get_queryset())
-        serializer = self.get_serializer(queryset, many=True)
-        data = serializer.data
-
-        # Annotate each record with the live status from StatusService
-        user_ids = {record['user'] for record in data}
-        status_cache = {}
-        for uid in user_ids:
+        # 2. Get today's actual attendance records for these employees
+        today = date.today()
+        # Optional: frontend could pass ?date=YYYY-MM-DD
+        date_str = request.query_params.get('date')
+        if date_str:
             try:
-                member = User.objects.get(id=uid)
-                status_cache[str(uid)] = StatusService.get_user_status(member)['status']
-            except User.DoesNotExist:
-                status_cache[str(uid)] = 'offline'
+                from datetime import datetime
+                today = datetime.strptime(date_str, '%Y-%m-%d').date()
+            except ValueError:
+                pass
+
+        attendances = Attendance.objects.filter(
+            user__in=team,
+            date=today
+        ).select_related('user', 'reviewed_by').prefetch_related('work_sessions')
+        
+        # Map user ID to their attendance record
+        att_map = {a.user_id: a for a in attendances}
 
         enriched = []
-        for record in data:
-            record = dict(record)
-            record['live_status'] = status_cache.get(str(record['user']), 'offline')
+        for member in team:
+            member_att = att_map.get(member.id)
+            
+            if member_att:
+                # Use actual attendance data
+                record = AttendanceSerializer(member_att).data
+                record['user_name'] = member.full_name
+                record['user_email'] = member.email
+                if member.department:
+                    record['department_name'] = member.department.name
+                    
+                # Calculate last logout time from work sessions
+                last_logout = None
+                sessions = member_att.work_sessions.all()
+                if sessions:
+                    # Get the end_time of the latest session
+                    latest_session = max(sessions, key=lambda s: s.start_time)
+                    if latest_session.end_time:
+                        last_logout = latest_session.end_time.isoformat()
+                record['last_logout'] = last_logout
+            else:
+                # Generate a dummy 'absent' record
+                record = {
+                    'id': f"dummy_{member.id}_{today}",
+                    'user': member.id,
+                    'user_name': member.full_name,
+                    'user_email': member.email,
+                    'department_name': member.department.name if member.department else None,
+                    'date': str(today),
+                    'status': 'absent',
+                    'work_hours': '00:00:00',
+                    'total_work_seconds': 0,
+                    'total_break_seconds': 0,
+                    'total_idle_seconds': 0,
+                    'is_flagged': False,
+                    'flag_reason': '',
+                    'manager_remark': '',
+                    'reviewed_by': None,
+                    'reviewed_at': None,
+                    'last_logout': None
+                }
+
+            # Annotate with live status (only makes sense for today, but we fetch it regardless)
+            if today == date.today():
+                status_data = StatusService.get_user_status(member)
+                record['live_status'] = status_data['status']
+            else:
+                record['live_status'] = 'offline'
+
             enriched.append(record)
 
         return Response(enriched)

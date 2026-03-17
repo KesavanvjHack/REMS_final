@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
-import { format } from 'date-fns';
-import { CalendarDaysIcon, CheckIcon, XMarkIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import { CalendarDaysIcon, CheckIcon, XMarkIcon, TrashIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 const LeaveApproval = () => {
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
+
+  // Date filter state for export
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [exportType, setExportType] = useState('custom');
+  const [exportEmployee, setExportEmployee] = useState('all');
 
   useEffect(() => {
     fetchLeaves();
@@ -51,18 +57,150 @@ const LeaveApproval = () => {
     }
   };
 
+  const handleQuickSelect = (type) => {
+    setExportType(type);
+    const now = new Date();
+    if (type === 'weekly') {
+      setStartDate(format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+      setEndDate(format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+    } else if (type === 'monthly') {
+      setStartDate(format(startOfMonth(now), 'yyyy-MM-dd'));
+      setEndDate(format(endOfMonth(now), 'yyyy-MM-dd'));
+    } else {
+      setStartDate('');
+      setEndDate('');
+    }
+  };
+
+  const handleExport = () => {
+    let rawData = leaves;
+    
+    // If the user picked dates, filter the exported data
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      
+      rawData = rawData.filter(rec => {
+        const d = new Date(rec.from_date);
+        return d >= start && d <= end;
+      });
+    }
+
+    if (exportEmployee !== 'all') {
+      rawData = rawData.filter(rec => rec.employee_name === exportEmployee);
+    }
+
+    if (rawData.length === 0) {
+      toast.error('No leave records found for the selected dates and employee');
+      return;
+    }
+
+    const headers = ['Employee', 'Leave Type', 'From Date', 'To Date', 'Duration (Days)', 'Reason', 'Status'];
+    const csvContent = [
+      headers.join(','),
+      ...rawData.map(rec => [
+         rec.employee_name,
+         rec.leave_type,
+         format(new Date(rec.from_date), 'yyyy-MM-dd'),
+         format(new Date(rec.to_date), 'yyyy-MM-dd'),
+         rec.duration_days,
+         rec.reason.replace(/,/g, ' '), // sanitize commas
+         rec.status
+      ].map(v => `"${v}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Team_Leaves_Export_${startDate || 'All'}_to_${endDate || 'All'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Leaves exported successfully!');
+  };
+
   if (loading) return <div className="text-indigo-400">Loading Requests...</div>;
+
+  // Filter leaves for display: Only show CURRENT WEEK records
+  const now = new Date();
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+  
+  const weeklyLeaves = leaves.filter((leave) => {
+    const leaveStart = new Date(leave.from_date);
+    return isWithinInterval(leaveStart, { start: weekStart, end: weekEnd });
+  });
+
+  // Extract unique employees from leaves data
+  const uniqueEmployees = Array.from(new Set(leaves.map(l => l.employee_name))).filter(Boolean).sort();
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-2 bg-indigo-500/20 rounded-lg">
-          <CalendarDaysIcon className="h-6 w-6 text-indigo-400" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-500/20 rounded-lg">
+            <CalendarDaysIcon className="h-6 w-6 text-indigo-400" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-white">Leave Approvals</h1>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white">Leave Approvals</h1>
+
+        {/* Export Controls */}
+        <div className="flex flex-col md:flex-row flex-wrap items-start md:items-center gap-3 bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+          <div className="flex gap-2 flex-wrap">
+            <select
+              value={exportEmployee}
+              onChange={(e) => setExportEmployee(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="all">All Employees</option>
+              {uniqueEmployees.map(empName => (
+                <option key={empName} value={empName}>{empName}</option>
+              ))}
+            </select>
+            <select 
+              value={exportType}
+              onChange={(e) => handleQuickSelect(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="custom">Custom Dates</option>
+              <option value="weekly">This Week</option>
+              <option value="monthly">This Month</option>
+            </select>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+            />
+            <span className="text-slate-500">to</span>
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+            />
+          </div>
+
+          <button 
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4" />
+            Export CSV
+          </button>
+        </div>
       </div>
 
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
+        <div className="p-6 border-b border-slate-700">
+          <h2 className="text-lg font-semibold text-white">This Week's Leave Requests</h2>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
@@ -76,7 +214,7 @@ const LeaveApproval = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {leaves.map((leave) => (
+              {weeklyLeaves.map((leave) => (
                 <tr key={leave.id} className="hover:bg-slate-700/20 transition-colors">
                   <td className="px-6 py-4 font-medium text-slate-200">{leave.employee_name}</td>
                   <td className="px-6 py-4 text-xs font-medium uppercase tracking-widest text-indigo-300">{leave.leave_type}</td>
@@ -126,9 +264,9 @@ const LeaveApproval = () => {
                   </td>
                 </tr>
               ))}
-              {leaves.length === 0 && (
+              {weeklyLeaves.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-slate-500">No leave requests found</td>
+                  <td colSpan="6" className="px-6 py-8 text-center text-slate-500">No leave requests found for this week</td>
                 </tr>
               )}
             </tbody>

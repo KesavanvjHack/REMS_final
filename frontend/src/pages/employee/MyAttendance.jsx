@@ -1,12 +1,17 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
-import { format } from 'date-fns';
-import { QueueListIcon } from '@heroicons/react/24/outline';
+import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import { QueueListIcon, ArrowDownTrayIcon, CalendarIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
 const MyAttendance = () => {
   const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // Date filter state for export
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [exportType, setExportType] = useState('custom');
 
   useEffect(() => {
     fetchAttendance();
@@ -24,21 +29,132 @@ const MyAttendance = () => {
       const res = await api.get('/attendance/');
       setAttendance(res.data.results || res.data);
     } catch (error) {
-      toast.error('Failed to load attendance records');
+      // Suppress repeated toast if polling fails
     } finally {
       setLoading(false);
     }
   };
 
+  const handleQuickSelect = (type) => {
+    setExportType(type);
+    const now = new Date();
+    if (type === 'weekly') {
+      setStartDate(format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+      setEndDate(format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'));
+    } else if (type === 'monthly') {
+      setStartDate(format(startOfMonth(now), 'yyyy-MM-dd'));
+      setEndDate(format(endOfMonth(now), 'yyyy-MM-dd'));
+    } else {
+      setStartDate('');
+      setEndDate('');
+    }
+  };
+
+  const handleExport = () => {
+    let rawData = attendance;
+    
+    // If the user picked dates, filter the exported data
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      
+      rawData = attendance.filter(rec => {
+        const d = new Date(rec.date);
+        return d >= start && d <= end;
+      });
+    }
+
+    if (rawData.length === 0) {
+      toast.error('No attendance records found for the selected dates');
+      return;
+    }
+
+    const headers = ['Date', 'Status', 'Work Hours', 'Break (Hours)', 'Idle (Hours)', 'Flags'];
+    const csvContent = [
+      headers.join(','),
+      ...rawData.map(rec => [
+         format(new Date(rec.date), 'yyyy-MM-dd'),
+         rec.status,
+         rec.work_hours,
+         (rec.total_break_seconds / 3600).toFixed(2),
+         (rec.total_idle_seconds / 3600).toFixed(2),
+         rec.is_flagged ? `Flagged: ${rec.flag_reason}` : 'None'
+      ].map(v => `"${v}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Attendance_Export_${startDate || 'All'}_to_${endDate || 'All'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Export downloaded successfully!');
+  };
+
   if (loading) return <div className="text-indigo-400">Loading Attendance...</div>;
+
+  // Filter attendance for display: Only show CURRENT WEEK records
+  const now = new Date();
+  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+  
+  const weeklyAttendance = attendance.filter((record) => {
+    const recordDate = new Date(record.date);
+    return isWithinInterval(recordDate, { start: weekStart, end: weekEnd });
+  });
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-2 bg-indigo-500/20 rounded-lg">
-          <QueueListIcon className="h-6 w-6 text-indigo-400" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-500/20 rounded-lg">
+            <QueueListIcon className="h-6 w-6 text-indigo-400" />
+          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-white">This Week's Attendance</h1>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white">My Attendance History</h1>
+
+        {/* Export Controls */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+          <div className="flex gap-2">
+            <select 
+              value={exportType}
+              onChange={(e) => handleQuickSelect(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="custom">Custom Dates</option>
+              <option value="weekly">This Week</option>
+              <option value="monthly">This Month</option>
+            </select>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+            />
+            <span className="text-slate-500">to</span>
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+            />
+          </div>
+
+          <button 
+            onClick={handleExport}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4" />
+            Export CSV
+          </button>
+        </div>
       </div>
 
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
@@ -55,7 +171,7 @@ const MyAttendance = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {attendance.map((record) => (
+              {weeklyAttendance.map((record) => (
                 <tr key={record.id} className="hover:bg-slate-700/20 transition-colors">
                   <td className="px-6 py-4 font-medium text-slate-200">
                     {format(new Date(record.date), 'EEEE, MMM dd, yyyy')}
@@ -84,9 +200,9 @@ const MyAttendance = () => {
                   </td>
                 </tr>
               ))}
-              {attendance.length === 0 && (
+              {weeklyAttendance.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-slate-500">No attendance registered yet</td>
+                  <td colSpan="6" className="px-6 py-8 text-center text-slate-500">No attendance registered yet this week.</td>
                 </tr>
               )}
             </tbody>
