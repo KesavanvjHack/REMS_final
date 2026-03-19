@@ -4,6 +4,7 @@ DRF Serializers for all REMS models.
 
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
+from django.utils import timezone
 from .models import (
     User, Department, Role, AttendancePolicy, Attendance,
     WorkSession, BreakSession, IdleLog, LeaveRequest, Holiday, AuditLog
@@ -136,14 +137,21 @@ class AttendancePolicySerializer(serializers.ModelSerializer):
 class AttendanceSerializer(serializers.ModelSerializer):
     user_email = serializers.CharField(source='user.email', read_only=True)
     user_name = serializers.CharField(source='user.full_name', read_only=True)
-    effective_work_seconds = serializers.IntegerField(read_only=True)
+    user_role = serializers.CharField(source='user.role', read_only=True)
+    
+    total_work_seconds = serializers.SerializerMethodField()
+    total_break_seconds = serializers.SerializerMethodField()
+    total_idle_seconds = serializers.SerializerMethodField()
+    effective_work_seconds = serializers.SerializerMethodField()
     work_hours = serializers.SerializerMethodField()
+    live_status = serializers.SerializerMethodField()
+    last_logout = serializers.SerializerMethodField()
 
     class Meta:
         model = Attendance
         fields = [
-            'id', 'user', 'user_email', 'user_name',
-            'date', 'status',
+            'id', 'user', 'user_email', 'user_name', 'user_role',
+            'date', 'status', 'live_status', 'last_logout',
             'total_work_seconds', 'total_break_seconds', 'total_idle_seconds',
             'effective_work_seconds', 'work_hours',
             'is_flagged', 'flag_reason', 'manager_remark',
@@ -155,8 +163,69 @@ class AttendanceSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
 
+    def get_total_work_seconds(self, obj):
+        total = obj.total_work_seconds
+        latest_session = obj.work_sessions.order_by('-start_time').first()
+        if latest_session and latest_session.end_time is None:
+            total += int((timezone.now() - latest_session.start_time).total_seconds())
+        return total
+
+    def get_total_break_seconds(self, obj):
+        total = obj.total_break_seconds
+        latest_session = obj.work_sessions.order_by('-start_time').first()
+        if latest_session and latest_session.end_time is None:
+            latest_break = latest_session.break_sessions.order_by('-start_time').first()
+            if latest_break and latest_break.end_time is None:
+                total += int((timezone.now() - latest_break.start_time).total_seconds())
+        return total
+
+    def get_total_idle_seconds(self, obj):
+        total = obj.total_idle_seconds
+        
+        # Add historical idle time from all sessions today
+        for session in obj.work_sessions.all():
+            for idle in session.idle_logs.filter(end_time__isnull=False):
+                total += int((idle.end_time - idle.start_time).total_seconds())
+                
+        # Add ongoing idle time if currently idle
+        latest_session = obj.work_sessions.order_by('-start_time').first()
+        if latest_session and latest_session.end_time is None:
+            latest_idle = latest_session.idle_logs.order_by('-start_time').first()
+            if latest_idle and latest_idle.end_time is None:
+                total += int((timezone.now() - latest_idle.start_time).total_seconds())
+        return total
+
+    def get_effective_work_seconds(self, obj):
+        work = self.get_total_work_seconds(obj)
+        breaks = self.get_total_break_seconds(obj)
+        idle = self.get_total_idle_seconds(obj)
+        return max(0, work - breaks - idle)
+
     def get_work_hours(self, obj):
-        return round(obj.effective_work_seconds / 3600, 2)
+        effective = self.get_effective_work_seconds(obj)
+        return round(effective / 3600, 2)
+
+    def get_live_status(self, obj):
+        latest_session = obj.work_sessions.order_by('-start_time').first()
+        if latest_session and latest_session.end_time is None:
+            latest_break = latest_session.break_sessions.order_by('-start_time').first()
+            if latest_break and latest_break.end_time is None:
+                return 'On Break'
+                
+            latest_idle = latest_session.idle_logs.order_by('-start_time').first()
+            if latest_idle and latest_idle.end_time is None:
+                return 'Idle'
+                
+            return 'Working'
+        return 'Offline'
+
+    def get_last_logout(self, obj):
+        # Find the most recently ended session
+        last_ended = obj.work_sessions.filter(end_time__isnull=False).order_by('-end_time').first()
+        if last_ended:
+            local_time = timezone.localtime(last_ended.end_time)
+            return local_time.strftime('%I:%M:%S %p')
+        return '--:--:--'
 
 
 # ── Work Session ───────────────────────────────────────────────────────────────
@@ -199,13 +268,14 @@ class WorkSessionSerializer(serializers.ModelSerializer):
 class LeaveRequestSerializer(serializers.ModelSerializer):
     employee_name = serializers.CharField(source='employee.full_name', read_only=True)
     employee_email = serializers.CharField(source='employee.email', read_only=True)
+    employee_role = serializers.CharField(source='employee.role', read_only=True)
     reviewer_name = serializers.CharField(source='reviewed_by.full_name', read_only=True, default=None)
     duration_days = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = LeaveRequest
         fields = [
-            'id', 'employee', 'employee_name', 'employee_email',
+            'id', 'employee', 'employee_name', 'employee_email', 'employee_role',
             'leave_type', 'from_date', 'to_date', 'duration_days',
             'reason', 'status', 'reviewed_by', 'reviewer_name',
             'review_comment', 'reviewed_at', 'created_at', 'updated_at',
@@ -249,8 +319,14 @@ class HolidaySerializer(serializers.ModelSerializer):
 # ── Audit Log ──────────────────────────────────────────────────────────────────
 
 class AuditLogSerializer(serializers.ModelSerializer):
-    user_email = serializers.CharField(source='user.email', read_only=True, default=None)
-    user_name = serializers.CharField(source='user.full_name', read_only=True, default=None)
+    user_email = serializers.SerializerMethodField()
+    user_name = serializers.SerializerMethodField()
+
+    def get_user_email(self, obj):
+        return obj.user.email if obj.user else None
+
+    def get_user_name(self, obj):
+        return obj.user.full_name if obj.user else None
 
     class Meta:
         model = AuditLog
@@ -259,7 +335,11 @@ class AuditLogSerializer(serializers.ModelSerializer):
             'action_type', 'description', 'ip_address',
             'user_agent', 'extra_data', 'timestamp',
         ]
-        read_only_fields = '__all__'
+        read_only_fields = [
+            'id', 'user', 'user_email', 'user_name',
+            'action_type', 'description', 'ip_address',
+            'user_agent', 'extra_data', 'timestamp',
+        ]
 
 
 # ── Manager Review ─────────────────────────────────────────────────────────────
@@ -305,9 +385,21 @@ class TaskSerializer(serializers.ModelSerializer):
 
 class AppUsageLogSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.full_name', read_only=True)
+    category = serializers.SerializerMethodField()
+
     class Meta:
         model = AppUsageLog
         fields = '__all__'
+
+    def get_category(self, obj):
+        productive_apps = ['vscode', 'github', 'slack', 'notion', 'figma', 'jira', 'chrome', 'rems']
+        unproductive_apps = ['youtube', 'netflix', 'facebook', 'twitter', 'instagram', 'reddit', 'game']
+        app_lower = obj.app_name.lower()
+        if any(x in app_lower for x in productive_apps):
+            return 'productive'
+        if any(x in app_lower for x in unproductive_apps):
+            return 'unproductive'
+        return 'neutral'
 
 class AlertSerializer(serializers.ModelSerializer):
     class Meta:

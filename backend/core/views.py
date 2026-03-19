@@ -338,6 +338,75 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({'detail': 'No attendance record for today.'}, status=404)
         return Response(AttendanceSerializer(attendance).data)
 
+    @action(detail=False, methods=['get'])
+    def todays_absences(self, request):
+        """Get today's absences and leaves for employees and managers."""
+        today = date.today()
+        
+        # 1. Get all active employees and managers
+        users = User.objects.filter(is_active=True, role__in=['employee', 'manager'])
+        
+        # 2. Get today's actual attendance records
+        attendances = Attendance.objects.filter(
+            user__in=users,
+            date=today
+        ).select_related('user')
+        
+        att_map = {a.user_id: a for a in attendances}
+        
+        # 3. Get any leave requests spanning today
+        leaves = LeaveRequest.objects.filter(employee__in=users, from_date__lte=today, to_date__gte=today)
+        leave_map = {leave.employee_id: leave for leave in leaves}
+        
+        result = []
+        for u in users:
+            att = att_map.get(u.id)
+            leave = leave_map.get(u.id)
+            
+            if leave:
+                result.append({
+                    'id': f"leave_{u.id}_{today}",
+                    'user_name': u.full_name,
+                    'user_email': u.email,
+                    'user_role': u.role,
+                    'status': 'on_leave',
+                    'leave_type': leave.get_leave_type_display() if leave else "Leave",
+                    'reason': f"The reason is: {leave.reason or leave.get_leave_type_display()}"
+                })
+            elif att:
+                if att.status == Attendance.STATUS_ON_LEAVE:
+                    result.append({
+                        'id': str(att.id),
+                        'user_name': u.full_name,
+                        'user_email': u.email,
+                        'user_role': u.role,
+                        'status': att.status,
+                        'leave_type': 'Leave',
+                        'reason': f"The reason is: {att.manager_remark or att.flag_reason or 'sick'}"
+                    })
+                elif att.status == Attendance.STATUS_ABSENT:
+                    result.append({
+                        'id': str(att.id),
+                        'user_name': u.full_name,
+                        'user_email': u.email,
+                        'user_role': u.role,
+                        'status': att.status,
+                        'leave_type': 'Absent',
+                        'reason': 'late check'
+                    })
+            else:
+                result.append({
+                    'id': f"dummy_{u.id}_{today}",
+                    'user_name': u.full_name,
+                    'user_email': u.email,
+                    'user_role': u.role,
+                    'status': 'absent',
+                    'leave_type': 'Absent',
+                    'reason': 'No checking'
+                })
+                
+        return Response(result)
+
     @action(detail=True, methods=['post'], permission_classes=[IsManager])
     def review(self, request, pk=None):
         """Manager reviews and adds remarks to flagged attendance."""
@@ -503,12 +572,28 @@ class TeamStatusView(APIView):
     def get(self, request):
         user = request.user
         if user.role == 'admin':
-            team = User.objects.filter(is_active=True).exclude(role='admin').select_related('department', 'manager')
+            # Admins see Managers and Employees
+            team = User.objects.filter(
+                is_active=True, 
+                role__in=['manager', 'employee']
+            ).select_related('department', 'manager')
+        elif user.role == 'manager':
+            # Managers see ONLY Employees within their scope (subordinates or department)
+            team_scope = Q(manager=user)
+            if user.department:
+                team_scope |= Q(department=user.department)
+            
+            team = User.objects.filter(
+                team_scope,
+                role='employee',
+                is_active=True
+            ).distinct().select_related('department', 'manager')
         else:
-            team = user.subordinates.filter(is_active=True).select_related('department', 'manager')
+            team = User.objects.none()
 
         result = []
         for member in team:
+            # Optionally skip self if requested, but generally useful to see self too
             status_data = StatusService.get_user_status(member)
             result.append({
                 'user_id': str(member.id),
@@ -633,6 +718,22 @@ class LeaveRequestViewSet(viewsets.ModelViewSet):
                 Q(employee=user) | Q(employee__in=subordinate_ids)
             ).select_related('employee', 'reviewed_by')
         return LeaveRequest.objects.filter(employee=user).select_related('employee', 'reviewed_by')
+
+    @action(detail=False, methods=['get'])
+    def today(self, request):
+        today = date.today()
+        # Fetch leaves overlapping with today
+        qs = self.get_queryset().filter(from_date__lte=today, to_date__gte=today)
+        # Requirement: "employee and manager only leaves" 
+        qs = qs.filter(employee__role__in=['employee', 'manager'])
+        
+        page = self.paginate_queryset(qs)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
 
     def create(self, request, *args, **kwargs):
         serializer = LeaveApplySerializer(data=request.data)
@@ -795,14 +896,17 @@ class ReportView(APIView):
 
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AuditLogSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
     filterset_fields = ['action_type', 'user']
     search_fields = ['description', 'user__email']
     ordering = ['-timestamp']
 
     def get_queryset(self):
-        return AuditLog.objects.select_related('user').all()
+        qs = AuditLog.objects.select_related('user').all()
+        if getattr(self.request.user, 'role', '') == 'admin':
+            return qs
+        return qs.filter(user=self.request.user)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -824,11 +928,11 @@ class ExportView(APIView):
         if export_type == 'attendance':
             return self._export_attendance(request, from_date, to_date, file_format)
         elif export_type == 'leave':
-            return self._export_leave(request, file_format)
+            return self._export_leave(request, from_date, to_date, file_format)
         elif export_type == 'audit':
             if request.user.role != 'admin':
                 return Response({'detail': 'Admin only.'}, status=403)
-            return self._export_audit(file_format)
+            return self._export_audit(request, from_date, to_date, file_format)
         elif export_type == 'payroll':
             if request.user.role not in ['admin', 'manager']:
                 return Response({'detail': 'Unauthorized.'}, status=403)
@@ -884,12 +988,28 @@ class ExportView(APIView):
             ])
         return response
 
-    def _export_leave(self, request, file_format):
+    def _export_leave(self, request, from_date, to_date, file_format):
         from django.http import HttpResponse
         qs = LeaveRequest.objects.select_related('employee', 'reviewed_by').all()
+        
+        category = request.query_params.get('category')
+        user_id = request.query_params.get('user_id')
+
         if request.user.role == 'manager':
             subordinate_ids = request.user.subordinates.values_list('id', flat=True)
             qs = qs.filter(employee__in=subordinate_ids)
+
+        if category == 'employees':
+            qs = qs.filter(employee__role='employee')
+        elif category == 'managers':
+            qs = qs.filter(employee__role='manager')
+        elif category == 'particular_employee' and user_id:
+            qs = qs.filter(employee_id=user_id)
+            
+        if from_date:
+            qs = qs.filter(to_date__gte=from_date) # Leaves ending on or after from_date
+        if to_date:
+            qs = qs.filter(from_date__lte=to_date) # Leaves starting on or before to_date
 
         if file_format == 'xlsx':
             return self._to_xlsx(
@@ -917,9 +1037,25 @@ class ExportView(APIView):
             ])
         return response
 
-    def _export_audit(self, file_format):
+    def _export_audit(self, request, from_date, to_date, file_format):
+        import csv
         from django.http import HttpResponse
         qs = AuditLog.objects.select_related('user').all()
+
+        category = request.query_params.get('category')
+        user_id = request.query_params.get('user_id')
+
+        if category == 'employees':
+            qs = qs.filter(user__role='employee')
+        elif category == 'managers':
+            qs = qs.filter(user__role='manager')
+        elif category == 'particular_employee' and user_id:
+            qs = qs.filter(user_id=user_id)
+            
+        if from_date:
+            qs = qs.filter(timestamp__date__gte=from_date)
+        if to_date:
+            qs = qs.filter(timestamp__date__lte=to_date)
 
         if file_format == 'xlsx':
             return self._to_xlsx(

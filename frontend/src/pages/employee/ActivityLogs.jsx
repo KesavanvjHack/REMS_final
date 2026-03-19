@@ -13,8 +13,46 @@ const ActivityLogs = () => {
 
   const fetchLogs = async () => {
     try {
-      const res = await api.get('/app-logs/');
-      setLogs(res.data.results || res.data);
+      const [appRes, auditRes] = await Promise.all([
+        api.get('/app-logs/'),
+        api.get('/audit-logs/')
+      ]);
+      
+      const appLogs = (appRes.data.results || appRes.data).map(log => ({
+        ...log,
+        type: 'app'
+      }));
+
+      // Filter and format audit logs so they don't look like internal API spam
+      const friendlyActionMap = {
+        'login': 'Logged In',
+        'logout': 'Logged Out',
+        'create': 'Created Resource',
+        'update': 'Updated Resource',
+        'delete': 'Deleted Resource',
+        'approve': 'Approved Request',
+        'reject': 'Rejected Request'
+      };
+
+      const auditLogs = (auditRes.data.results || auditRes.data).map(log => {
+        let desc = log.description || '';
+        if (desc.includes('/api/')) {
+          desc = `System event logged for ${log.action_type.toLowerCase()}`;
+        }
+        
+        return {
+          id: `audit-${log.id}`,
+          app_name: `System Event: ${friendlyActionMap[log.action_type] || log.action_type}`,
+          category: 'system',
+          duration_seconds: 0,
+          timestamp: log.timestamp,
+          description: desc,
+          type: 'audit'
+        };
+      });
+      
+      const combined = [...appLogs, ...auditLogs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      setLogs(combined);
     } catch (err) {
       toast.error('Failed to load activity logs');
     } finally {
@@ -51,18 +89,28 @@ const ActivityLogs = () => {
               <tbody className="divide-y divide-slate-700">
                 {logs.map(log => (
                   <tr key={log.id} className="hover:bg-slate-700/20 transition-colors">
-                    <td className="px-6 py-4 font-medium text-slate-200">{log.app_name}</td>
+                    <td className="px-6 py-4 font-medium text-slate-200">
+                      {log.url && log.type === 'app' ? (
+                        <a href={log.url} target="_blank" rel="noopener noreferrer" className="hover:text-indigo-400 underline decoration-indigo-500/30 underline-offset-4">
+                          {log.app_name}
+                        </a>
+                      ) : (
+                        log.app_name
+                      )}
+                      {log.type === 'audit' && <div className="text-xs text-slate-500 font-normal mt-0.5">{log.description}</div>}
+                    </td>
                     <td className="px-6 py-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-semibold
                         ${log.category === 'productive' ? 'bg-emerald-500/10 text-emerald-400' : 
                           log.category === 'unproductive' ? 'bg-rose-500/10 text-rose-400' : 
+                          log.category === 'system' ? 'bg-indigo-500/10 text-indigo-400' :
                           'bg-slate-500/10 text-slate-400'}`}>
-                        {log.category || 'Neutral'}
+                        {log.category ? log.category.charAt(0).toUpperCase() + log.category.slice(1) : 'Neutral'}
                       </span>
                     </td>
                     <td className="px-6 py-4 flex items-center gap-2">
                       <ClockIcon className="h-4 w-4 text-slate-500" />
-                      {Math.floor((log.duration_seconds || 0) / 60)} mins
+                      {log.type === 'audit' ? 'Instant' : `${Math.floor((log.duration_seconds || 0) / 60)} mins`}
                     </td>
                     <td className="px-6 py-4">{new Date(log.timestamp).toLocaleString()}</td>
                   </tr>

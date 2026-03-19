@@ -77,9 +77,9 @@ const LiveStatusPanel = ({ liveStatuses }) => {
     };
   }, [mergedMembers]);
 
-  // Only render when at least someone is active
-  const hasActive = counts.working > 0 || counts.on_break > 0 || counts.idle > 0;
-  if (!hasActive) return null;
+  // Always render for Managers and Admins (handled by parent visibility check)
+  // const hasActive = counts.working > 0 || counts.on_break > 0 || counts.idle > 0;
+  // if (!hasActive) return null;
 
   // Group helpers
   const byRole = (role) => mergedMembers.filter(m => m.role === role || m.user_role === role);
@@ -229,6 +229,7 @@ const TopBar = () => {
   const [currentStatus, setCurrentStatus] = useState('offline');
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const wsRef = useRef(null);
 
   useEffect(() => {
@@ -240,6 +241,11 @@ const TopBar = () => {
     if (user) {
       connectWebSocket();
     }
+
+    // Set up ticking clock
+    const clockInterval = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
 
     // Listen to manual triggers from WorkSession
     const handleStatusChange = (e) => {
@@ -253,6 +259,7 @@ const TopBar = () => {
 
     return () => {
       clearInterval(interval);
+      clearInterval(clockInterval);
       window.removeEventListener('statusChange', handleStatusChange);
       if (wsRef.current) {
         wsRef.current.close();
@@ -483,7 +490,9 @@ const TopBar = () => {
             <>
               <div className="text-right">
                 <p className="text-base font-semibold text-slate-200 tracking-wide">{user?.full_name}</p>
-                <p className="text-xs text-indigo-400 uppercase tracking-widest font-mono">{user?.role}</p>
+                <p className="text-sm text-rose-500 font-bold uppercase tracking-widest font-mono">
+                  {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                </p>
               </div>
               <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 font-bold shadow-inner">
                 {user?.full_name?.charAt(0) || 'U'}

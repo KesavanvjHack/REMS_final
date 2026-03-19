@@ -40,6 +40,7 @@ const TeamAttendance = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [exportType, setExportType] = useState('custom');
+  const [exportEmployee, setExportEmployee] = useState('all');
 
   const fetchTeamAttendance = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -88,14 +89,18 @@ const TeamAttendance = () => {
       const end = new Date(endDate);
       end.setHours(23, 59, 59, 999);
       
-      rawData = attendance.filter(rec => {
+      rawData = rawData.filter(rec => {
         const d = new Date(rec.date);
         return d >= start && d <= end;
       });
     }
 
+    if (exportEmployee !== 'all') {
+      rawData = rawData.filter(rec => rec.user_name === exportEmployee);
+    }
+
     if (rawData.length === 0) {
-      toast.error('No timesheet records found for the selected dates');
+      toast.error('No timesheet records found for the selected criteria');
       return;
     }
 
@@ -133,6 +138,9 @@ const TeamAttendance = () => {
     </div>
   );
 
+  // Extract unique employees from attendance data
+  const uniqueEmployees = Array.from(new Set(attendance.map(a => a.user_name))).filter(Boolean).sort();
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between xl:items-start gap-4 mb-6">
@@ -150,8 +158,19 @@ const TeamAttendance = () => {
         
         <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4">
           {/* Export Controls */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
-            <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
+            <div className="flex gap-2 flex-wrap">
+              <select
+                value={exportEmployee}
+                onChange={(e) => setExportEmployee(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="all">All Employees</option>
+                {uniqueEmployees.map(empName => (
+                  <option key={empName} value={empName}>{empName}</option>
+                ))}
+              </select>
+
               <select 
                 value={exportType}
                 onChange={(e) => handleQuickSelect(e.target.value)}
