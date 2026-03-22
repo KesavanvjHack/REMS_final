@@ -898,7 +898,11 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = AuditLogSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['action_type', 'user']
+    filterset_fields = {
+        'timestamp': ['exact', 'date', 'gte', 'lte'],
+        'action_type': ['exact'],
+        'user': ['exact']
+    }
     search_fields = ['description', 'user__email']
     ordering = ['-timestamp']
 
@@ -1194,6 +1198,11 @@ class TaskViewSet(viewsets.ModelViewSet):
 class AppUsageLogViewSet(viewsets.ModelViewSet):
     serializer_class = AppUsageLogSerializer
     permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, OrderingFilter]
+    filterset_fields = {
+        'timestamp': ['exact', 'date', 'gte', 'lte']
+    }
+    ordering = ['-timestamp']
 
     def get_queryset(self):
         user = self.request.user

@@ -4,15 +4,18 @@ import toast from 'react-hot-toast';
 import { QueueListIcon, ClockIcon } from '@heroicons/react/24/outline';
 
 const ActivityLogs = () => {
-  const [logs, setLogs] = useState([]);
+  const [allLogs, setAllLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('today'); // 'today' or 'all'
 
   useEffect(() => {
     fetchLogs();
   }, []);
 
   const fetchLogs = async () => {
+    setLoading(true);
     try {
+      // Fetch all to ensure consistency across timezones for Today filter
       const [appRes, auditRes] = await Promise.all([
         api.get('/app-logs/'),
         api.get('/audit-logs/')
@@ -52,7 +55,7 @@ const ActivityLogs = () => {
       });
       
       const combined = [...appLogs, ...auditLogs].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-      setLogs(combined);
+      setAllLogs(combined);
     } catch (err) {
       toast.error('Failed to load activity logs');
     } finally {
@@ -60,21 +63,53 @@ const ActivityLogs = () => {
     }
   };
 
+  const displayedLogs = React.useMemo(() => {
+    if (filter === 'all') return allLogs;
+    const today = new Date().toLocaleDateString('en-CA');
+    return allLogs.filter(log => new Date(log.timestamp).toLocaleDateString('en-CA') === today);
+  }, [allLogs, filter]);
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-          <QueueListIcon className="h-6 w-6 text-indigo-400" />
-          Activity & App Usage Logs
-        </h2>
-        <p className="text-slate-400 mt-1">Review your tracked application usage and system events.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+            <QueueListIcon className="h-6 w-6 text-indigo-400" />
+            Activity & App Usage Logs
+          </h2>
+          <p className="text-slate-400 mt-1">Review your tracked application usage and system events.</p>
+        </div>
+
+        {/* Filter Toggle */}
+        <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700 w-fit h-fit">
+          <button
+            onClick={() => setFilter('today')}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+              filter === 'today' 
+                ? 'bg-indigo-500 text-white shadow-lg' 
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+            }`}
+          >
+            Today
+          </button>
+          <button
+            onClick={() => setFilter('all')}
+            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
+              filter === 'all' 
+                ? 'bg-indigo-500 text-white shadow-lg' 
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+            }`}
+          >
+            All
+          </button>
+        </div>
       </div>
 
       <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
         {loading ? (
           <div className="p-8 text-center text-slate-400 animate-pulse">Loading logs...</div>
-        ) : logs.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 italic">No activity logs recorded yet.</div>
+        ) : displayedLogs.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 italic">No activity logs recorded {filter === 'today' ? 'today' : 'yet'}.</div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-400">
@@ -87,7 +122,7 @@ const ActivityLogs = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700">
-                {logs.map(log => (
+                {displayedLogs.map(log => (
                   <tr key={log.id} className="hover:bg-slate-700/20 transition-colors">
                     <td className="px-6 py-4 font-medium text-slate-200">
                       {log.url && log.type === 'app' ? (
