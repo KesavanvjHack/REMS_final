@@ -1,13 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import api from '../../api/axios';
 import { ChartBarIcon, ClockIcon, BuildingOfficeIcon, UserGroupIcon, ExclamationTriangleIcon, FlagIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import { formatDuration, formatLastLogout, formatDecimalHours } from '../../utils/format';
+import { AuthContext } from '../../context/AuthContext';
 
 const AttendanceHub = () => {
   const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(null);
+  const { policy } = useContext(AuthContext);
 
   // Filter states
   const today = new Date().toISOString().split('T')[0];
@@ -19,13 +22,30 @@ const AttendanceHub = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [dateFilter, startDate, endDate]);
 
   const fetchData = async () => {
+    setLoading(true);
     try {
+      let params = {};
+      if (dateFilter === 'today') {
+        params.date = today;
+      } else if (dateFilter === 'this_week') {
+        const now = new Date();
+        params.date__gte = startOfWeek(now, { weekStartsOn: 1 }).toISOString().split('T')[0];
+        params.date__lte = endOfWeek(now, { weekStartsOn: 1 }).toISOString().split('T')[0];
+      } else if (dateFilter === 'this_month') {
+        const now = new Date();
+        params.date__gte = startOfMonth(now).toISOString().split('T')[0];
+        params.date__lte = endOfMonth(now).toISOString().split('T')[0];
+      } else if (dateFilter === 'custom' && startDate && endDate) {
+        params.date__gte = startDate;
+        params.date__lte = endDate;
+      }
+
       const [attRes, sumRes, usersRes] = await Promise.all([
-        api.get('/attendance/'),
-        api.get('/reports/?type=summary'),
+        api.get('/attendance/', { params }),
+        api.get('/reports/?type=summary', { params: dateFilter === 'today' ? { from_date: today, to_date: today } : {} }),
         api.get('/users/')
       ]);
       const allAtt = attRes.data.results || attRes.data;
@@ -50,7 +70,10 @@ const AttendanceHub = () => {
         last_logout: '--:--',
         effective_work_seconds: 0,
         total_break_seconds: 0,
-        total_idle_seconds: 0
+        total_idle_seconds: 0,
+        is_flagged: false,
+        flag_reason: '',
+        manager_remark: 'No record found / Absent'
       }));
       
       setAttendance([...allAtt, ...dummyRecords]);
@@ -62,12 +85,7 @@ const AttendanceHub = () => {
     }
   };
 
-  const calculateDuration = (seconds) => {
-    if (!seconds) return '0h 0m';
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    return `${h}h ${m}m`;
-  };
+  // Local calculateDuration removed as we now use shared formatDuration utility
 
   const getFilteredRecords = () => {
     let records = attendance.filter(record => record.user_role !== 'admin');
@@ -80,34 +98,8 @@ const AttendanceHub = () => {
       records = records.filter(record => record.user_name === employeeFilter);
     }
     
-    if (dateFilter === 'today') {
-      records = records.filter(record => record.date === today);
-    } else if (dateFilter === 'this_week') {
-      const now = new Date();
-      const weekStart = startOfWeek(now, { weekStartsOn: 1 });
-      const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
-      records = records.filter(record => {
-        if (!record.date) return false;
-        const d = parseISO(record.date);
-        return d >= weekStart && d <= weekEnd;
-      });
-    } else if (dateFilter === 'this_month') {
-      const now = new Date();
-      const monthStart = startOfMonth(now);
-      const monthEnd = endOfMonth(now);
-      records = records.filter(record => {
-        if (!record.date) return false;
-        const d = parseISO(record.date);
-        return d >= monthStart && d <= monthEnd;
-      });
-    } else if (dateFilter === 'custom' && startDate && endDate) {
-      records = records.filter(record => {
-         if (!record.date) return false;
-         return record.date >= startDate && record.date <= endDate;
-      });
-    }
-    
-    // Sort descending by date (newest first)
+    // Since we now filter on the server, we just need to return the records
+    // Note: Missing users are only generated for 'today'
     return records.sort((a, b) => new Date(b.date) - new Date(a.date));
   };
 
@@ -118,17 +110,19 @@ const AttendanceHub = () => {
       return;
     }
 
-    const headers = ['Date', 'Name', 'Role', 'Live Status', 'Last Logout', 'Daily Attendance', 'Work (h)', 'Break (h)', 'Idle (h)'];
+    const headers = ['Date', 'Name', 'Role', 'Login Time', 'Last Logout', 'Daily Attendance', 'Work (h)', 'Break (h)', 'Idle (h)', 'Anomalies', 'Remarks / Reason'];
     const csvData = records.map(record => [
       record.date,
       record.user_name,
       record.user_role || 'Employee',
-      record.live_status || 'Offline',
-      record.last_logout || '--:--',
+      formatLastLogout(record.first_login),
+      formatLastLogout(record.last_logout),
       record.status,
-      calculateDuration(record.effective_work_seconds),
-      calculateDuration(record.total_break_seconds),
-      calculateDuration(record.total_idle_seconds)
+      formatDecimalHours(record.effective_work_seconds),
+      formatDecimalHours(record.total_break_seconds),
+      formatDecimalHours(record.total_idle_seconds),
+      record.is_flagged ? `Yes - ${record.flag_reason}` : 'No',
+      record.manager_remark || record.flag_reason || '-'
     ]);
 
     const csvContent = [
@@ -147,7 +141,7 @@ const AttendanceHub = () => {
   if (loading) return <div className="text-indigo-400 p-8 text-center animate-pulse">Loading Attendance Hub...</div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-fade-in">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-white">Company Attendance Hub</h1>
         
@@ -214,7 +208,7 @@ const AttendanceHub = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
         <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
           <div className="flex items-center gap-3 text-emerald-400 mb-2">
             <UserGroupIcon className="h-6 w-6" />
@@ -234,7 +228,23 @@ const AttendanceHub = () => {
             <ExclamationTriangleIcon className="h-6 w-6" />
             <h3 className="font-semibold">Absent</h3>
           </div>
-          <p className="text-3xl font-bold text-white">{getFilteredRecords().filter(r => r.status?.toLowerCase() === 'absent').length}</p>
+          <p className="text-3xl font-bold text-white">
+            {getFilteredRecords().filter(r => {
+              const status = (r.status || '').toLowerCase();
+              if (status !== 'absent') return false;
+              
+              const now = new Date();
+              const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+              const istDate = new Date(istString);
+              const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+              const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
+              const shiftEndMinutes = endHour * 60 + endMin;
+              const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
+              
+              const isToday = r.date === new Date().toISOString().split('T')[0];
+              return !(isToday && isBeforeShiftEnd);
+            }).length}
+          </p>
         </div>
         <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
           <div className="flex items-center gap-3 text-fuchsia-400 mb-2">
@@ -243,6 +253,29 @@ const AttendanceHub = () => {
           </div>
           <p className="text-3xl font-bold text-white">{getFilteredRecords().filter(r => r.status?.toLowerCase() === 'on_leave' || r.status?.toLowerCase() === 'on leave').length}</p>
         </div>
+        {dateFilter === 'today' && (
+          <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+            <div className="flex items-center gap-3 text-blue-400 mb-2">
+              <ClockIcon className="h-6 w-6" />
+              <h3 className="font-semibold">Calculating</h3>
+            </div>
+            <p className="text-3xl font-bold text-white">
+              {getFilteredRecords().filter(r => {
+                const now = new Date();
+                const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+                const istDate = new Date(istString);
+                const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+                const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
+                const shiftEndMinutes = endHour * 60 + endMin;
+                const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
+                
+                const status = (r.status || '').toLowerCase();
+                const isToday = r.date === new Date().toISOString().split('T')[0];
+                return isToday && isBeforeShiftEnd && status !== 'present' && status !== 'on_leave' && status !== 'holiday' && status !== 'halfday' && status !== 'half_day';
+              }).length}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
@@ -259,71 +292,113 @@ const AttendanceHub = () => {
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
               <tr>
-                <th className="px-6 py-4 font-semibold tracking-wider">Date</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Name</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Role</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Live Status</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Last Logout</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Attendance</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Work (h)</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Break (h)</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Idle (h)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Date</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Name</th>
+                <th className="px-3 py-4 font-semibold tracking-wider hidden xl:table-cell">Role</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Login Time</th>
+                <th className="px-3 py-4 font-semibold tracking-wider hidden lg:table-cell">Last Logout</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Attendance</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Work (h)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Break (h)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Idle (h)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center">Anomalies</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Remarks / Reason</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {getFilteredRecords().map((record) => (
+              {loading ? (
+                [...Array(5)].map((_, i) => (
+                  <tr key={i}>
+                    {[...Array(9)].map((_, j) => (
+                      <td key={j} className="px-6 py-4">
+                        <div className="h-4 w-full skeleton-pulse"></div>
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                getFilteredRecords().map((record) => {
+                const todayStr = new Date().toISOString().split('T')[0];
+                const now = new Date();
+                const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+                const istDate = new Date(istString);
+                const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+                const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
+                const shiftEndMinutes = endHour * 60 + endMin;
+                const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
+
+                const isCalculating = record.date === todayStr && 
+                                    isBeforeShiftEnd &&
+                                    record.status !== 'present' && 
+                                    record.status !== 'on_leave' && 
+                                    record.status !== 'holiday';
+                const displayStatus = isCalculating ? 'calculating...' : record.status;
+                const normalizedStatus = record.status?.toLowerCase();
+                
+                return (
                 <tr key={record.id} className="hover:bg-slate-700/20 transition-colors">
-                  <td className="px-6 py-4 font-mono text-slate-400 text-xs">{record.date}</td>
-                  <td className="px-6 py-4">
-                     <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/30">
+                  <td className="px-3 py-4 font-mono text-slate-400 text-[10px]">{record.date}</td>
+                  <td className="px-3 py-4">
+                     <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/30 text-xs">
                            {record.user_name?.charAt(0) || '?'}
                         </div>
-                        <p className="font-medium text-slate-200">{record.user_name}</p>
+                        <p className="font-medium text-slate-200 text-xs truncate max-w-[120px]" title={record.user_name}>{record.user_name}</p>
                      </div>
                   </td>
-                  <td className="px-6 py-4 font-medium text-slate-400 uppercase tracking-wider text-xs">
+                  <td className="px-3 py-4 font-medium text-slate-400 uppercase tracking-wider text-[10px] hidden xl:table-cell">
                      {record.user_role || 'Employee'}
                   </td>
-                  <td className="px-6 py-4">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 w-max
-                        ${record.live_status === 'Working' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                          record.live_status === 'On Break' ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
-                          record.live_status === 'Idle' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                          'bg-slate-500/10 text-slate-400 border border-slate-500/20'}
-                      `}>
-                        <div className={`w-1.5 h-1.5 rounded-full ${
-                          record.live_status === 'Working' ? 'bg-emerald-400' :
-                          record.live_status === 'On Break' ? 'bg-blue-400' :
-                          record.live_status === 'Idle' ? 'bg-rose-400' : 'bg-slate-500'
-                        }`}></div>
-                        {record.live_status || 'Offline'}
-                      </span>
-                  </td>
-                  <td className="px-6 py-4 text-slate-400 font-mono text-xs">{record.last_logout || '--:--'}</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest flex items-center justify-center gap-1.5 w-max
-                      ${record.status === 'present' || record.status === 'Present' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 
-                        record.status === 'absent' || record.status === 'Absent' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                        record.status === 'half_day' || record.status === 'Half Day' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' :
-                        record.status === 'on_leave' || record.status === 'On Leave' ? 'bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20' :
+                  <td className="px-3 py-4 text-slate-400 font-mono text-[10px]">{formatLastLogout(record.first_login)}</td>
+                  <td className="px-3 py-4 text-slate-400 font-mono text-[10px] hidden lg:table-cell">{formatLastLogout(record.last_logout)}</td>
+                  <td className="px-3 py-4">
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-1 w-max
+                      ${isCalculating ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
+                        normalizedStatus === 'present' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 
+                        normalizedStatus === 'absent' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                        normalizedStatus === 'half_day' || normalizedStatus === 'half day' ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' :
+                        normalizedStatus === 'on_leave' || normalizedStatus === 'on leave' ? 'bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20' :
                         'bg-slate-500/10 text-slate-400 border border-slate-500/20'}
                     `}>
-                      <div className={`w-1.5 h-1.5 rounded-full ${
-                        record.status === 'present' || record.status === 'Present' ? 'bg-emerald-400' :
-                        record.status === 'absent' || record.status === 'Absent' ? 'bg-rose-400' :
-                        record.status === 'half_day' || record.status === 'Half Day' ? 'bg-sky-400' :
-                        record.status === 'on_leave' || record.status === 'On Leave' ? 'bg-fuchsia-400' : 'bg-slate-400'
+                      <div className={`w-1 h-1 rounded-full ${
+                        isCalculating ? 'bg-blue-400' :
+                        normalizedStatus === 'present' ? 'bg-emerald-400' :
+                        normalizedStatus === 'absent' ? 'bg-rose-400' :
+                        normalizedStatus === 'half_day' || normalizedStatus === 'half day' ? 'bg-sky-400' :
+                        normalizedStatus === 'on_leave' || normalizedStatus === 'on leave' ? 'bg-fuchsia-400' : 'bg-slate-400'
                       }`}></div>
-                      {record.status === 'on_leave' ? 'On Leave' : record.status === 'half_day' ? 'Half Day' : record.status}
+                      {displayStatus === 'on_leave' ? 'On Leave' : displayStatus === 'half_day' ? 'Half Day' : displayStatus}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-emerald-400 font-mono text-sm">{calculateDuration(record.effective_work_seconds)}</td>
-                  <td className="px-6 py-4 text-amber-400 font-mono text-sm">{calculateDuration(record.total_break_seconds)}</td>
-                  <td className="px-6 py-4 text-rose-400 font-mono text-sm">{calculateDuration(record.total_idle_seconds)}</td>
+                  <td className="px-3 py-4 text-emerald-400 font-mono text-[11px] whitespace-nowrap">{formatDuration(record.effective_work_seconds)}</td>
+                  <td className="px-3 py-4 text-amber-400 font-mono text-[11px] whitespace-nowrap">{formatDuration(record.total_break_seconds)}</td>
+                  <td className="px-3 py-4 text-rose-400 font-mono text-[11px] whitespace-nowrap">{formatDuration(record.total_idle_seconds)}</td>
+                  <td className="px-3 py-4 text-center">
+                    {record.is_flagged ? (
+                      <span className="text-rose-400 font-bold text-[10px] flex items-center justify-center gap-1 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>
+                        <FlagIcon className="h-3 w-3" /> Flagged
+                      </span>
+                    ) : (
+                      <span className="text-slate-600">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-4">
+                    {record.manager_remark ? (
+                      <div className="flex flex-col">
+                        <span className="text-indigo-400 text-[10px] font-medium italic underline underline-offset-4 decoration-indigo-500/30 uppercase tracking-wider">Note:</span>
+                        <p className="text-slate-300 text-[10px] mt-1 leading-relaxed truncate max-w-[150px]" title={record.manager_remark}>{record.manager_remark}</p>
+                      </div>
+                    ) : record.flag_reason ? (
+                      <p className="text-slate-400 text-[10px] italic leading-relaxed truncate max-w-[150px]" title={record.flag_reason}>{record.flag_reason}</p>
+                    ) : (
+                      <span className="text-slate-600 font-mono text-[10px]">-</span>
+                    )}
+                  </td>
                 </tr>
-              ))}
-              {attendance.length === 0 && (
+                );
+              })
+            )}
+            {!loading && attendance.length === 0 && (
                 <tr>
                   <td colSpan="6" className="px-6 py-8 text-center text-slate-500">No attendance records found</td>
                 </tr>

@@ -140,7 +140,21 @@ const LeaveRequest = () => {
     }
   };
 
-  if (loading) return <div className="text-indigo-400">Loading Leaves...</div>;
+  // Loading skeletons for a premium feel
+  if (loading) {
+    return (
+      <div className="space-y-6 page-fade-in">
+        <div className="flex justify-between items-center mb-6">
+          <div className="h-8 w-64 bg-slate-700 rounded skeleton-pulse"></div>
+          <div className="h-10 w-48 bg-slate-700 rounded skeleton-pulse"></div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-1 bg-slate-800/50 border border-slate-700 rounded-2xl p-6 h-96 skeleton-pulse"></div>
+          <div className="lg:col-span-2 bg-slate-800/50 border border-slate-700 rounded-2xl h-96 skeleton-pulse"></div>
+        </div>
+      </div>
+    );
+  }
 
   // Filter leaves for display: Only show CURRENT WEEK records
   const now = new Date();
@@ -153,7 +167,7 @@ const LeaveRequest = () => {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-indigo-500/20 rounded-lg">

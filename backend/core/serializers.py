@@ -126,8 +126,8 @@ class AttendancePolicySerializer(serializers.ModelSerializer):
         model = AttendancePolicy
         fields = [
             'id', 'name', 'min_working_hours', 'half_day_hours',
-            'idle_threshold_minutes', 'is_active', 'department',
-            'created_at', 'updated_at',
+            'idle_threshold_minutes', 'shift_start_time', 'shift_end_time',
+            'is_active', 'department', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -145,15 +145,17 @@ class AttendanceSerializer(serializers.ModelSerializer):
     effective_work_seconds = serializers.SerializerMethodField()
     work_hours = serializers.SerializerMethodField()
     live_status = serializers.SerializerMethodField()
+    first_login = serializers.SerializerMethodField()
     last_logout = serializers.SerializerMethodField()
+    has_completed_session = serializers.SerializerMethodField()
 
     class Meta:
         model = Attendance
         fields = [
             'id', 'user', 'user_email', 'user_name', 'user_role',
-            'date', 'status', 'live_status', 'last_logout',
+            'date', 'status', 'live_status', 'first_login', 'last_logout',
             'total_work_seconds', 'total_break_seconds', 'total_idle_seconds',
-            'effective_work_seconds', 'work_hours',
+            'effective_work_seconds', 'work_hours', 'has_completed_session',
             'is_flagged', 'flag_reason', 'manager_remark',
             'reviewed_by', 'reviewed_at', 'created_at', 'updated_at',
         ]
@@ -165,32 +167,36 @@ class AttendanceSerializer(serializers.ModelSerializer):
 
     def get_total_work_seconds(self, obj):
         total = obj.total_work_seconds
-        latest_session = obj.work_sessions.order_by('-start_time').first()
+        # Use .all() to leverage prefetch cache
+        sessions = list(obj.work_sessions.all())
+        latest_session = sessions[0] if sessions else None
+        
         if latest_session and latest_session.end_time is None:
             total += int((timezone.now() - latest_session.start_time).total_seconds())
         return total
 
     def get_total_break_seconds(self, obj):
         total = obj.total_break_seconds
-        latest_session = obj.work_sessions.order_by('-start_time').first()
+        sessions = list(obj.work_sessions.all())
+        latest_session = sessions[0] if sessions else None
+        
         if latest_session and latest_session.end_time is None:
-            latest_break = latest_session.break_sessions.order_by('-start_time').first()
+            # Use .all() on pre-ordered prefetch
+            breaks = list(latest_session.break_sessions.all())
+            latest_break = breaks[0] if breaks else None
             if latest_break and latest_break.end_time is None:
                 total += int((timezone.now() - latest_break.start_time).total_seconds())
         return total
 
     def get_total_idle_seconds(self, obj):
         total = obj.total_idle_seconds
+        sessions = list(obj.work_sessions.all())
+        latest_session = sessions[0] if sessions else None
         
-        # Add historical idle time from all sessions today
-        for session in obj.work_sessions.all():
-            for idle in session.idle_logs.filter(end_time__isnull=False):
-                total += int((idle.end_time - idle.start_time).total_seconds())
-                
-        # Add ongoing idle time if currently idle
-        latest_session = obj.work_sessions.order_by('-start_time').first()
         if latest_session and latest_session.end_time is None:
-            latest_idle = latest_session.idle_logs.order_by('-start_time').first()
+            # Use .all() on pre-ordered prefetch
+            idles = list(latest_session.idle_logs.all())
+            latest_idle = idles[0] if idles else None
             if latest_idle and latest_idle.end_time is None:
                 total += int((timezone.now() - latest_idle.start_time).total_seconds())
         return total
@@ -206,26 +212,46 @@ class AttendanceSerializer(serializers.ModelSerializer):
         return round(effective / 3600, 2)
 
     def get_live_status(self, obj):
-        latest_session = obj.work_sessions.order_by('-start_time').first()
+        sessions = list(obj.work_sessions.all())
+        latest_session = sessions[0] if sessions else None
+        
         if latest_session and latest_session.end_time is None:
-            latest_break = latest_session.break_sessions.order_by('-start_time').first()
+            breaks = list(latest_session.break_sessions.all())
+            latest_break = breaks[0] if breaks else None
             if latest_break and latest_break.end_time is None:
                 return 'On Break'
                 
-            latest_idle = latest_session.idle_logs.order_by('-start_time').first()
+            idles = list(latest_session.idle_logs.all())
+            latest_idle = idles[0] if idles else None
             if latest_idle and latest_idle.end_time is None:
                 return 'Idle'
                 
             return 'Working'
         return 'Offline'
 
+    def get_first_login(self, obj):
+        # Earliest start_time of any work session on this date
+        sessions = list(obj.work_sessions.all())
+        if not sessions:
+            return None
+        first_session = min(sessions, key=lambda s: s.start_time)
+        return first_session.start_time.isoformat()
+
     def get_last_logout(self, obj):
-        # Find the most recently ended session
-        last_ended = obj.work_sessions.filter(end_time__isnull=False).order_by('-end_time').first()
-        if last_ended:
-            local_time = timezone.localtime(last_ended.end_time)
-            return local_time.strftime('%I:%M:%S %p')
-        return '--:--:--'
+        # Use .all() and filter in memory to find the most recently ended session
+        sessions = list(obj.work_sessions.all())
+        ended_sessions = [s for s in sessions if s.end_time is not None]
+        # sessions are already ordered by -start_time, but we want the one that ended latest
+        if not ended_sessions:
+            return None
+        
+        last_ended = max(ended_sessions, key=lambda s: s.end_time)
+        return last_ended.end_time.isoformat()
+
+    def get_has_completed_session(self, obj):
+        # Use prefetched work_sessions if available
+        sessions = list(obj.work_sessions.all())
+        return any(s.end_time is not None for s in sessions)
 
 
 # ── Work Session ───────────────────────────────────────────────────────────────
@@ -345,8 +371,9 @@ class AuditLogSerializer(serializers.ModelSerializer):
 # ── Manager Review ─────────────────────────────────────────────────────────────
 
 class AttendanceReviewSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(choices=['approve', 'reject'], required=False)
     is_flagged = serializers.BooleanField(required=False)
-    manager_remark = serializers.CharField()
+    manager_remark = serializers.CharField(required=False, allow_blank=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Phase 10 Expanded Modules

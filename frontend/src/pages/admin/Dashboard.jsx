@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import api from '../../api/axios';
+import { AuthContext } from '../../context/AuthContext';
+import { format } from 'date-fns';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
@@ -10,6 +12,8 @@ const AdminDashboard = () => {
   const [summary, setSummary] = useState(null);
   const [dailyData, setDailyData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [todaysLeaves, setTodaysLeaves] = useState([]);
+  const { policy } = useContext(AuthContext);
 
   useEffect(() => {
     fetchData();
@@ -17,12 +21,14 @@ const AdminDashboard = () => {
 
   const fetchData = async () => {
     try {
-      const [sumRes, dailyRes] = await Promise.all([
+      const [sumRes, dailyRes, leavesRes] = await Promise.all([
         api.get('/reports/?type=summary'),
-        api.get('/reports/?type=daily&days=7')
+        api.get('/reports/?type=daily&days=7'),
+        api.get('/attendance/todays_absences/')
       ]);
       setSummary(sumRes.data);
       setDailyData(dailyRes.data);
+      setTodaysLeaves(Array.isArray(leavesRes.data) ? leavesRes.data : (leavesRes.data.results || []));
     } catch (error) {
       console.error('Failed to fetch dashboard data', error);
     } finally {
@@ -30,7 +36,29 @@ const AdminDashboard = () => {
     }
   };
 
-  if (loading) return <div className="text-indigo-400">Loading Dashboard...</div>;
+  // Loading skeletons for a premium feel
+  if (loading) {
+    return (
+      <div className="space-y-6 page-fade-in">
+        <h1 className="text-2xl font-bold tracking-tight text-white mb-6">Organization Overview</h1>
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl flex items-center gap-4">
+              <div className="p-4 rounded-xl bg-slate-700 w-16 h-16 skeleton-pulse"></div>
+              <div className="space-y-2">
+                <div className="h-4 w-24 bg-slate-700 rounded skeleton-pulse"></div>
+                <div className="h-8 w-16 bg-slate-700 rounded skeleton-pulse"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
+          <div className="lg:col-span-2 bg-slate-800/50 border border-slate-700 p-6 rounded-2xl h-96 skeleton-pulse"></div>
+          <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl h-96 skeleton-pulse"></div>
+        </div>
+      </div>
+    );
+  }
 
   const COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444'];
   const pieData = summary ? [
@@ -53,10 +81,10 @@ const AdminDashboard = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-fade-in">
       <h1 className="text-2xl font-bold tracking-tight text-white mb-6">Organization Overview</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
         <StatCard 
           title="Total Attendance Recorded" 
           value={summary?.total || 0} 
@@ -80,6 +108,12 @@ const AdminDashboard = () => {
           value={`${summary?.avg_idle_hours || 0}h`} 
           icon={ExclamationTriangleIcon} 
           colorClass="bg-amber-500" 
+        />
+        <StatCard 
+          title="Attendance Calculating" 
+          value={summary?.calculating || 0} 
+          icon={ClockIcon} 
+          colorClass="bg-blue-500" 
         />
       </div>
 
@@ -132,6 +166,80 @@ const AdminDashboard = () => {
               </PieChart>
             </ResponsiveContainer>
           </div>
+        </div>
+      </div>
+
+      {/* Today's Leaves Section */}
+      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden mt-8">
+        <div className="p-6 border-b border-slate-700 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <UsersIcon className="h-5 w-5 text-indigo-400" />
+            <h2 className="text-lg font-semibold text-white">Today's Leaves (Employees & Managers)</h2>
+          </div>
+          <div className="text-sm text-slate-400 font-medium">
+            {format(new Date(), 'EEEE, MMMM do, yyyy')}
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-slate-300">
+            <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+              <tr>
+                <th className="px-6 py-4 font-semibold">Name</th>
+                <th className="px-6 py-4 font-semibold text-center">Role</th>
+                <th className="px-6 py-4 font-semibold">Leave Type</th>
+                <th className="px-6 py-4 font-semibold">Reason</th>
+                <th className="px-6 py-4 text-center font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/50">
+              {todaysLeaves.length === 0 ? (
+                <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-500 italic">No leaves or absences found.</td></tr>
+              ) : (
+                todaysLeaves.map((leave) => {
+                  const now = new Date();
+                  const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+                  const istDate = new Date(istString);
+                  const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+                  const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
+                  const shiftEndMinutes = endHour * 60 + endMin;
+                  const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
+
+                  const isCalculating = isBeforeShiftEnd && (leave.status || '').toLowerCase() === 'absent';
+                  const displayStatus = isCalculating ? 'CALCULATING...' : (leave.status || 'N/A').toUpperCase();
+
+                  return (
+                    <tr key={leave.id} className="hover:bg-slate-700/10 transition-colors">
+                      <td className="px-6 py-4">
+                        <div className="font-medium text-slate-100">{leave.user_name || leave.employee_name}</div>
+                        <div className="text-xs text-slate-500">{leave.user_email || leave.employee_email}</div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
+                          (leave.user_role || leave.employee_role) === 'manager' 
+                            ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' 
+                            : 'bg-slate-700/50 text-slate-400 border-slate-600'
+                        }`}>
+                          {leave.user_role || leave.employee_role}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-slate-300">{leave.leave_type === '-' ? '-' : (leave.leave_type || 'General')}</td>
+                      <td className="px-6 py-4 max-w-[200px] truncate text-slate-400" title={leave.reason}>{leave.reason}</td>
+                      <td className="px-6 py-4 text-center">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold tracking-wider border ${
+                          isCalculating ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                          (leave.status || '').toLowerCase() === 'on_leave' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' :
+                          (leave.status || '').toLowerCase() === 'absent' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                          'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                        }`}>
+                          {displayStatus}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

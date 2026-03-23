@@ -2,6 +2,7 @@ import json
 from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
+from django.core.cache import cache
 
 class StatusConsumer(AsyncWebsocketConsumer):
     async def connect(self):
@@ -13,6 +14,16 @@ class StatusConsumer(AsyncWebsocketConsumer):
         )
         await self.accept()
 
+    async def trigger_status_broadcast(self, user_id):
+        """Helper to trigger StatusService broadcast from async consumer."""
+        from .models import User
+        from .services import StatusService
+        try:
+            user = await database_sync_to_async(User.objects.get)(id=user_id)
+            await database_sync_to_async(StatusService.broadcast_status_change)(user)
+        except Exception:
+            pass
+
     async def disconnect(self, close_code):
         # Remove from the global broadcast group
         await self.channel_layer.group_discard(
@@ -21,9 +32,18 @@ class StatusConsumer(AsyncWebsocketConsumer):
         )
 
     async def receive(self, text_data):
-        # Handle ping/pong if necessary, or client requests for state
-        # In this implementation, the backend services will push events down.
-        pass
+        """Handle presence heartbeats from clients."""
+        try:
+            data = json.loads(text_data)
+            if data.get('type') == 'presence':
+                user_id = data.get('user_id')
+                if user_id:
+                    # Store user ID in cache with a 60-second TTL
+                    cache.set(f'presence_{user_id}', True, 60)
+                    # Broadcast immediately to all listeners
+                    await self.trigger_status_broadcast(user_id)
+        except Exception:
+            pass
 
     async def status_update(self, event):
         """

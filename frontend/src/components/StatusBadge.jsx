@@ -28,6 +28,13 @@ const StatusBadge = ({ status }) => {
       icon: MinusCircleIcon,
       label: 'On Break'
     },
+    online: {
+      color: 'text-green-500', 
+      bg: 'bg-green-500/10',
+      border: 'border-green-500/30',
+      icon: CheckCircleIcon,
+      label: 'Online'
+    },
     offline: {
       color: 'text-slate-500',
       bg: 'bg-slate-500/10',

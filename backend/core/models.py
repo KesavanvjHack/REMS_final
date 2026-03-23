@@ -1,4 +1,5 @@
 import uuid
+import datetime
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
@@ -134,6 +135,14 @@ class AttendancePolicy(models.Model):
     idle_threshold_minutes = models.IntegerField(
         default=15,
         help_text='Minutes of inactivity before marking as Idle'
+    )
+    shift_start_time = models.TimeField(
+        default=datetime.time(9, 30),
+        help_text='Official shift starting time'
+    )
+    shift_end_time = models.TimeField(
+        default=datetime.time(17, 30),
+        help_text='Time after which ongoing attendance automatically drops the calculating status'
     )
     is_active = models.BooleanField(default=True)
     department = models.ForeignKey(

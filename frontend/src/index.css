@@ -26,6 +26,29 @@
   }
 }
 
+}
+
+@layer components {
+  .page-fade-in {
+    animation: fadeInSlideUp 0.5s ease-out forwards;
+  }
+
+  .skeleton-pulse {
+    @apply bg-slate-800 rounded animate-pulse;
+  }
+}
+
+@keyframes fadeInSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Custom scrollbar for dark theme */
 ::-webkit-scrollbar {
   width: 8px;

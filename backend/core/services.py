@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models import Sum, Q
 from datetime import date, timedelta
+from django.core.cache import cache
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 import logging
@@ -98,16 +99,21 @@ class AttendanceService:
         today = date.today()
 
         # Check if today is a holiday
-        is_holiday = Holiday.objects.filter(date=today).exists()
-        if is_holiday:
+        holiday = Holiday.objects.filter(date=today).first()
+        if holiday:
             default_status = Attendance.STATUS_HOLIDAY
+            default_remark = f"Holiday: {holiday.name}"
         else:
             default_status = Attendance.STATUS_ABSENT
+            default_remark = ""
 
         attendance, created = Attendance.objects.get_or_create(
             user=user,
             date=today,
-            defaults={'status': default_status}
+            defaults={
+                'status': default_status,
+                'manager_remark': default_remark
+            }
         )
         return attendance, created
 
@@ -163,24 +169,38 @@ class AttendanceService:
             status = attendance.status  # don't override leave/holiday
         elif effective_hours >= min_hours:
             status = attendance.STATUS_PRESENT
+            auto_remark = ""
         elif effective_hours >= half_day_hours:
             status = attendance.STATUS_HALF_DAY
+            auto_remark = f"Hours ({effective_hours:.2f}h) below required {min_hours}h for Present status."
         elif total_work > 0:
             status = attendance.STATUS_HALF_DAY if effective_hours > 0 else attendance.STATUS_ABSENT
+            auto_remark = f"Hours ({effective_hours:.2f}h) below threshold for Half Day."
         else:
             status = attendance.STATUS_ABSENT
+            auto_remark = "No work hours recorded."
 
         # Check if exceeds idle threshold (flag anomalies)
         idle_percentage = (total_idle / total_work * 100) if total_work > 0 else 0
-        should_flag = idle_percentage > 30  # flag if >30% time was idle
+        should_flag_idle = idle_percentage > 30
 
         attendance.total_work_seconds = total_work
         attendance.total_break_seconds = total_break
         attendance.total_idle_seconds = total_idle
         attendance.status = status
-        if should_flag and not attendance.is_flagged:
+
+        # Only set automated remark if manager hasn't provided one
+        if not attendance.manager_remark or "Hours" in (attendance.manager_remark or "") or "No work" in (attendance.manager_remark or ""):
+            attendance.manager_remark = auto_remark
+
+        # Dynamic Flagging
+        if should_flag_idle:
             attendance.is_flagged = True
             attendance.flag_reason = f'High idle time: {idle_percentage:.1f}% of work time'
+        elif attendance.is_flagged and 'High idle time' in (attendance.flag_reason or ''):
+            # Clear automatically only if it was an idle flag and now it resolves below 30%
+            attendance.is_flagged = False
+            attendance.flag_reason = ''
         attendance.save(update_fields=[
             'total_work_seconds', 'total_break_seconds', 'total_idle_seconds',
             'status', 'is_flagged', 'flag_reason', 'updated_at'
@@ -196,11 +216,28 @@ class WorkSessionService:
     @transaction.atomic
     def start_session(user, request):
         """Start a new work session for the user. Create attendance if needed."""
-        from .models import WorkSession, Attendance
+        from .models import WorkSession, Attendance, AttendancePolicy
+        import datetime
+
+        policy = AttendancePolicy.objects.filter(is_active=True).first()
+        now_local = timezone.localtime(timezone.now())
+        
+        # 1. Enforce shift start time constraint
+        if policy:
+            if now_local.time() < policy.shift_start_time:
+                raise ValueError(f"Shift has not started yet. You can start work after {policy.shift_start_time.strftime('%I:%M %p')}.")
 
         attendance, _ = AttendanceService.get_or_create_today(user)
         # Sequence lock on parent attendance to prevent double-click creation races
         Attendance.objects.select_for_update().get(id=attendance.id)
+
+        # 2. Enforce one-session-per-day constraint (disable after checkout)
+        completed_sessions = WorkSession.objects.filter(
+            attendance=attendance,
+            end_time__isnull=False
+        ).exists()
+        if completed_sessions:
+            raise ValueError("You have already checked out for today. New sessions are restricted until tomorrow.")
 
         # Check if there's already an open session
         open_session = WorkSession.objects.filter(
@@ -218,8 +255,9 @@ class WorkSessionService:
         )
         AuditService.log(user, 'create', 'Work session started', request)
         StatusService.broadcast_status_change(user)
+        time_str = timezone.localtime(timezone.now()).strftime("%I:%M %p")
         NotificationService.notify_based_on_role(
-            user, "Shift Started", f"{user.full_name} started their shift.", "status"
+            user, "Shift Started", f"{user.full_name} started their shift at {time_str}.", "status"
         )
         return session, True
 
@@ -258,8 +296,9 @@ class WorkSessionService:
 
         AttendanceService.recalculate_status(attendance)
         StatusService.broadcast_status_change(user)
+        time_str = timezone.localtime(timezone.now()).strftime("%I:%M %p")
         NotificationService.notify_based_on_role(
-            user, "Shift Ended", f"{user.full_name} clocked out.", "status"
+            user, "Shift Ended", f"{user.full_name} clocked out at {time_str}.", "status"
         )
         return open_session, True
 
@@ -290,6 +329,12 @@ class BreakSessionService:
         existing_break = open_session.break_sessions.filter(end_time__isnull=True).first()
         if existing_break:
             return existing_break, False
+
+        # Close any open idle log before starting break
+        open_idle = open_session.idle_logs.filter(end_time__isnull=True).first()
+        if open_idle:
+            open_idle.end_time = timezone.now()
+            open_idle.save(update_fields=['end_time', 'updated_at'])
 
         break_session = BreakSession.objects.create(
             work_session=open_session,
@@ -349,6 +394,11 @@ class IdleService:
         if not open_session:
             return None, False
 
+        # Prevent idle during an active break
+        on_break = open_session.break_sessions.filter(end_time__isnull=True).exists()
+        if on_break:
+            return None, False
+
         existing_idle = open_session.idle_logs.filter(end_time__isnull=True).first()
         if existing_idle:
             return existing_idle, False
@@ -358,8 +408,16 @@ class IdleService:
             start_time=timezone.now(),
         )
         StatusService.broadcast_status_change(user)
+        # Notify managers & admins
         NotificationService.notify_managers_and_admins(
-            user, "Employee Idle", f"{user.full_name} has been idle.", "system"
+            user, "Employee Idle", f"{user.full_name} has been idle for 15+ minutes.", "system"
+        )
+        # Also notify the employee themselves
+        NotificationService._send_notifications(
+            user, [user],
+            "You're Idle",
+            "You've been inactive for 15 minutes. Your status is now marked as idle.",
+            "system"
         )
         return idle_log, True
 
@@ -386,8 +444,16 @@ class IdleService:
         open_idle.save(update_fields=['end_time', 'updated_at'])
         AttendanceService.recalculate_status(attendance)
         StatusService.broadcast_status_change(user)
+        # Notify managers & admins
         NotificationService.notify_managers_and_admins(
             user, "Employee Active", f"{user.full_name} is active again.", "system"
+        )
+        # Also notify the employee themselves
+        NotificationService._send_notifications(
+            user, [user],
+            "You're Active",
+            "Welcome back! Your idle period has been recorded.",
+            "system"
         )
         return open_idle, True
 
@@ -427,25 +493,27 @@ class StatusService:
         today = date.today()
         attendance = user.attendances.filter(date=today).first()
         if not attendance:
-            return {'status': 'offline', 'attendance': None}
-
+            status = 'online' if cache.get(f'presence_{user.id}') else 'offline'
+            return {'status': status, 'attendance': None}
+ 
         open_session = WorkSession.objects.filter(
             attendance=attendance,
             end_time__isnull=True
         ).first()
-
+ 
         if not open_session:
-            return {'status': 'offline', 'attendance': attendance}
+            status = 'online' if cache.get(f'presence_{user.id}') else 'offline'
+            return {'status': status, 'attendance': attendance}
+
+        # Check break (Prioritized over idle)
+        open_break = open_session.break_sessions.filter(end_time__isnull=True).first()
+        if open_break:
+            return {'status': 'on_break', 'attendance': attendance, 'session': open_session}
 
         # Check idle
         open_idle = open_session.idle_logs.filter(end_time__isnull=True).first()
         if open_idle:
             return {'status': 'idle', 'attendance': attendance, 'session': open_session}
-
-        # Check break
-        open_break = open_session.break_sessions.filter(end_time__isnull=True).first()
-        if open_break:
-            return {'status': 'on_break', 'attendance': attendance, 'session': open_session}
 
         return {'status': 'working', 'attendance': attendance, 'session': open_session}
 
@@ -486,7 +554,10 @@ class LeaveService:
                     Attendance.objects.update_or_create(
                         user=leave_request.employee,
                         date=d,
-                        defaults={'status': Attendance.STATUS_ON_LEAVE}
+                        defaults={
+                            'status': Attendance.STATUS_ON_LEAVE,
+                            'manager_remark': f"Leave: {leave_request.get_leave_type_display()} - {leave_request.reason or ''}"
+                        }
                     )
                 d += timedelta(days=1)
         elif action == 'reject':
@@ -512,38 +583,70 @@ class LeaveService:
 class ReportService:
 
     @staticmethod
-    def get_attendance_summary(user=None, from_date=None, to_date=None):
-        """Return attendance summary stats."""
-        from .models import Attendance
+    def get_attendance_summary(user_ids=None, from_date=None, to_date=None):
+        """
+        Return attendance summary stats.
+        user_ids: Optional list of user IDs to filter by.
+        """
+        from .models import Attendance, AttendancePolicy
+        from django.db.models import Sum
+        from django.utils import timezone
+        import datetime
+        import pytz
 
+        today = date.today()
         qs = Attendance.objects.all()
-        if user:
-            qs = qs.filter(user=user)
+        if user_ids is not None:
+            qs = qs.filter(user_id__in=user_ids)
         if from_date:
             qs = qs.filter(date__gte=from_date)
-        if to_date:
-            qs = qs.filter(date__lte=to_date)
+            
+        # Cap range to today to avoid future leaves skewing averages
+        range_end = to_date if to_date else today
+        if isinstance(range_end, str):
+            range_end = date.fromisoformat(range_end)
+        
+        effective_to_date = min(range_end, today)
+        qs = qs.filter(date__lte=effective_to_date)
+
+        # Get policy for cutoff check
+        policy = AttendancePolicy.objects.first()
+        shift_end = policy.shift_end_time if policy else datetime.time(17, 30)
+        
+        # IST check
+        ist = pytz.timezone('Asia/Kolkata')
+        now_ist = timezone.now().astimezone(ist)
+        is_before_cutoff = now_ist.time() < shift_end
 
         total = qs.count()
         present = qs.filter(status='present').count()
         half_day = qs.filter(status='half_day').count()
-        absent = qs.filter(status='absent').count()
         on_leave = qs.filter(status='on_leave').count()
+        
+        # Absent logic: only count as absent if it's NOT today or if cutoff passed
+        absent_qs = qs.filter(status='absent')
+        if is_before_cutoff:
+            # Exclude today's absents from the final "Absent" count if shift hasn't ended
+            final_absent = absent_qs.exclude(date=today).count()
+            calculating = absent_qs.filter(date=today).count()
+        else:
+            final_absent = absent_qs.count()
+            calculating = 0
+
+        absent = final_absent
 
         avg_work = qs.aggregate(avg=Sum('total_work_seconds'))['avg'] or 0
         avg_idle = qs.aggregate(avg=Sum('total_idle_seconds'))['avg'] or 0
 
-        # Calculate Productivity Score (Average over the days)
-        from .services import ProductivityScoringService
+        # Calculate Productivity Score (Average over the days/users)
+        # Avoid iterating through thousands of records for global summaries (Admin overview)
+        # only calculate if we have a manageable number of records (< 200) or specific user filters
         total_score = 0
         scored_days = 0
         
-        # We need the user to calculate the score per day explicitly
-        if user:
-            days = qs.filter(user=user)
-            for d_att in days:
-                score = ProductivityScoringService.calculate_score(user, d_att.date)
-                total_score += score
+        if total < 200:
+            for d_att in qs.select_related('user'):
+                total_score += ProductivityScoringService.calculate_score(d_att.user, d_att.date)
                 scored_days += 1
                 
         avg_productivity_score = round(total_score / scored_days) if scored_days > 0 else 0
@@ -553,6 +656,7 @@ class ReportService:
             'present': present,
             'half_day': half_day,
             'absent': absent,
+            'calculating': calculating,
             'on_leave': on_leave,
             'attendance_rate': round(present / total * 100, 1) if total > 0 else 0,
             'avg_work_hours': round(avg_work / 3600, 2) if total > 0 else 0,
@@ -561,16 +665,20 @@ class ReportService:
         }
 
     @staticmethod
-    def get_daily_data(user=None, days=7):
-        """Return per-day productivity data for charts."""
-        from .models import Attendance
+    def get_daily_data(user_ids=None, days=7):
+        """
+        Return per-day productivity data for charts.
+        user_ids: Optional list of user IDs to filter by.
+        """
+        from .models import Attendance, User
+        from django.db.models import Sum
 
         end = date.today()
         start = end - timedelta(days=days - 1)
 
         qs = Attendance.objects.filter(date__range=(start, end))
-        if user:
-            qs = qs.filter(user=user)
+        if user_ids is not None:
+            qs = qs.filter(user_id__in=user_ids)
 
         result = []
         d = start
@@ -579,12 +687,17 @@ class ReportService:
             work_s = day_qs.aggregate(s=Sum('total_work_seconds'))['s'] or 0
             idle_s = day_qs.aggregate(s=Sum('total_idle_seconds'))['s'] or 0
             break_s = day_qs.aggregate(s=Sum('total_break_seconds'))['s'] or 0
-            
-            daily_score = 0
-            if user:
+
+            # Performance safety cap: skip scores for massive datasets
+            total_day_score = 0
+            scored_count = 0
+            if qs.count() < 500:
                 from .services import ProductivityScoringService
-                daily_score = ProductivityScoringService.calculate_score(user, d)
-                
+                for att in day_qs.select_related('user'):
+                    total_day_score += ProductivityScoringService.calculate_score(att.user, d)
+                    scored_count += 1
+            daily_score = round(total_day_score / scored_count) if scored_count > 0 else 0
+
             result.append({
                 'date': d.strftime('%Y-%m-%d'),
                 'work_hours': round(work_s / 3600, 2),

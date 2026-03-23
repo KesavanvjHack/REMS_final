@@ -9,7 +9,11 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [liveStatuses, setLiveStatuses] = useState({});
+  const [idleThreshold, setIdleThreshold] = useState(15); // Default 15 mins
+  const [policy, setPolicy] = useState(null);
+  const [status, setStatus] = useState('offline');
   const wsRef = useRef(null);
+  const heartbeatRef = useRef(null);
 
   useEffect(() => {
     checkUserStatus();
@@ -30,6 +34,19 @@ export const AuthProvider = ({ children }) => {
         console.error('Failed to prepare initial live statuses', err);
       }
     }
+
+    // Fetch idle threshold for all roles (or just employee, but harmless for others)
+    try {
+      const policyRes = await api.get('/policy/');
+      const policies = policyRes.data.results || policyRes.data;
+      const activePolicy = policies.find(p => p.is_active) || policies[0];
+      if (activePolicy) {
+        setIdleThreshold(activePolicy.idle_threshold_minutes);
+        setPolicy(activePolicy);
+      }
+    } catch (err) {
+      console.error('Failed to fetch idle threshold', err);
+    }
   };
 
   const checkUserStatus = async () => {
@@ -45,7 +62,7 @@ export const AuthProvider = ({ children }) => {
           const res = await api.get('/auth/me/');
           setUser(res.data);
           fetchInitialStatuses(res.data.role);
-          connectWebSocket();
+          connectWebSocket(res.data);
         }
       } catch (error) {
         logout();
@@ -64,7 +81,7 @@ export const AuthProvider = ({ children }) => {
       const role = res.data.user.role;
       toast.success('Login Successful');
       fetchInitialStatuses(role);
-      connectWebSocket();
+      connectWebSocket(res.data.user);
       
       // Return role to redirect appropriately
       return role; 
@@ -93,11 +110,22 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const connectWebSocket = () => {
-    if (wsRef.current) return;
+  const connectWebSocket = (currentUser) => {
+    if (wsRef.current || !currentUser) return;
     try {
       // Connecting to the Django Channels WebSocket endpoint
       const ws = new WebSocket('ws://localhost:8000/ws/status/');
+      ws.onopen = () => {
+        console.log('Status WebSocket Connected');
+        if (currentUser) {
+          ws.send(JSON.stringify({ type: 'presence', user_id: currentUser.id }));
+          heartbeatRef.current = setInterval(() => {
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: 'presence', user_id: currentUser.id }));
+            }
+          }, 30000);
+        }
+      };
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === 'status_update') {
@@ -117,6 +145,10 @@ export const AuthProvider = ({ children }) => {
   };
 
   const disconnectWebSocket = () => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -127,6 +159,10 @@ export const AuthProvider = ({ children }) => {
     user,
     loading,
     liveStatuses,
+    idleThreshold,
+    status,
+    setStatus,
+    policy,
     login,
     logout,
   };

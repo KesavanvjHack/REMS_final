@@ -1,15 +1,39 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext, useMemo } from 'react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
 import { PlayIcon, StopIcon, PauseIcon } from '@heroicons/react/24/solid';
-import { ClockIcon } from '@heroicons/react/24/outline';
+import { ClockIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
+import { AuthContext } from '../../context/AuthContext';
+
+const formatTime12h = (timeStr) => {
+  if (!timeStr) return '';
+  const [h, m] = timeStr.split(':').map(Number);
+  const period = h >= 12 ? 'PM' : 'AM';
+  const hour12 = h % 12 || 12;
+  return `${hour12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${period}`;
+};
 
 const WorkSession = () => {
-  const [status, setStatus] = useState('offline'); // offline | working | on_break
+  const { policy, user, status, setStatus } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
   const [breakType, setBreakType] = useState('lunch');
   const [breakTimeLeft, setBreakTimeLeft] = useState(0);
   const [activeWorkSeconds, setActiveWorkSeconds] = useState(0);
+  const [attendance, setAttendance] = useState(null);
+  const [hasCheckedOutToday, setHasCheckedOutToday] = useState(false);
+
+  // Compute shift restriction immediately — no API needed
+  const isOutsideShift = useMemo(() => {
+    if (user?.role === 'admin') return false; // Admins bypass
+    const now = new Date();
+    const [sH, sM] = (policy?.shift_start_time || '09:30').split(':').map(Number);
+    const shiftStart = new Date();
+    shiftStart.setHours(sH, sM, 0, 0);
+    const [eH, eM] = (policy?.shift_end_time || '18:30').split(':').map(Number);
+    const shiftEnd = new Date();
+    shiftEnd.setHours(eH, eM, 0, 0);
+    return now < shiftStart || now > shiftEnd;
+  }, [policy, user]);
 
   useEffect(() => {
     fetchStatus();
@@ -25,6 +49,20 @@ const WorkSession = () => {
         // Increment work timer if working
         if (currentStatus === 'working') {
           setActiveWorkSeconds(prev => prev + 1);
+
+          // Auto-Checkout Logic: If working and passed shift end time
+          if (policy?.shift_end_time && !loading) {
+            const now = new Date();
+            const [endH, endM] = policy.shift_end_time.split(':').map(Number);
+            const shiftEnd = new Date();
+            shiftEnd.setHours(endH, endM, 0, 0);
+
+            if (now >= shiftEnd) {
+              console.log("Shift end reached. Auto-checking out...");
+              handleAction('work', 'stop');
+              toast.success("Shift ended. Auto-checkout triggered.");
+            }
+          }
         }
         return currentStatus;
       });
@@ -41,7 +79,7 @@ const WorkSession = () => {
        clearInterval(intervalId);
        clearInterval(countdownId);
     };
-  }, []);
+  }, [policy]); // Only restart intervals when policy changes, not on loading toggle
 
   // Auto-resume work when break time expires
   useEffect(() => {
@@ -60,6 +98,14 @@ const WorkSession = () => {
     try {
       const res = await api.get('/status/me/');
       setStatus(res.data.status);
+      setAttendance(res.data.attendance);
+
+      // Check if user has already checked out today
+      if (res.data.attendance) {
+        setHasCheckedOutToday(res.data.attendance.has_completed_session);
+      }
+
+
       
       // Sync the real active time from the server session if available
       if (res.data.session && ['working', 'on_break', 'idle'].includes(res.data.status)) {
@@ -174,6 +220,23 @@ const WorkSession = () => {
       <div className="text-center mb-10">
         <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Remote Work Terminal</h1>
         <p className="text-slate-400">Log your active hours and breaks for accurate attendance calculation.</p>
+        
+        {policy && (
+          <div className="flex items-center justify-center gap-6 mt-6">
+            <div className="flex flex-col items-center px-6 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
+              <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-widest">Enable Time</span>
+              <span className="text-lg font-mono font-bold text-indigo-300">
+                {new Date(`2000-01-01T${policy.shift_start_time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+            <div className="flex flex-col items-center px-6 py-2 bg-rose-500/10 border border-rose-500/20 rounded-2xl">
+              <span className="text-[10px] uppercase font-bold text-rose-400 tracking-widest">Shift End</span>
+              <span className="text-lg font-mono font-bold text-rose-300">
+                {new Date(`2000-01-01T${policy.shift_end_time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-slate-800/50 border border-slate-700 rounded-3xl p-10 flex flex-col items-center shadow-xl">
@@ -207,18 +270,34 @@ const WorkSession = () => {
         </h2>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full">
-          {(status === 'offline' || status === 'idle') && (
-            <button
-              onClick={() => handleAction('work', 'start')}
-              disabled={loading}
-              className="flex items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white py-4 px-6 rounded-2xl font-semibold tracking-wide shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all disabled:opacity-50"
-            >
-              <PlayIcon className="h-6 w-6" />
-              Start Work
-            </button>
+          {(status === 'offline' || status === 'online') && (
+            <div className="sm:col-span-2 space-y-4">
+              {/* Restriction Message */}
+              {user?.role !== 'admin' && isOutsideShift && (
+                <div className="flex items-center gap-3 p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl text-amber-400 text-sm">
+                  <InformationCircleIcon className="h-5 w-5 shrink-0" />
+                  <p>Work is only allowed during shift hours: <span className="font-bold">{formatTime12h(policy?.shift_start_time || '09:30')}</span> – <span className="font-bold">{formatTime12h(policy?.shift_end_time || '18:30')}</span>.</p>
+                </div>
+              )}
+              {user?.role !== 'admin' && !isOutsideShift && hasCheckedOutToday && (
+                <div className="flex items-center gap-3 p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-indigo-400 text-sm">
+                  <InformationCircleIcon className="h-5 w-5 shrink-0" />
+                  <p>You have already completed your session for today. New sessions are restricted until tomorrow.</p>
+                </div>
+              )}
+
+              <button
+                onClick={() => handleAction('work', 'start')}
+                disabled={loading || (user?.role !== 'admin' && (hasCheckedOutToday || isOutsideShift))}
+                className="w-full flex items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white py-4 px-6 rounded-2xl font-semibold tracking-wide shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all disabled:opacity-50 disabled:grayscale"
+              >
+                <PlayIcon className="h-6 w-6" />
+                Start Work
+              </button>
+            </div>
           )}
 
-          {status === 'working' && (
+          {(status === 'working' || status === 'idle') && (
             <>
               <div className="flex flex-col gap-3">
                 <select 

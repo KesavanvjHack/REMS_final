@@ -15,6 +15,7 @@ const STATUS_META = {
   working:  { label: 'Working',  dot: 'bg-emerald-400 animate-pulse', text: 'text-emerald-400' },
   on_break: { label: 'On Break', dot: 'bg-cyan-400',    text: 'text-cyan-400'  },
   idle:     { label: 'Idle',     dot: 'bg-amber-400',   text: 'text-amber-400' },
+  online:   { label: 'Online',   dot: 'bg-green-500',   text: 'text-green-500' },
   offline:  { label: 'Offline',  dot: 'bg-slate-500',   text: 'text-slate-500' },
 };
 
@@ -225,8 +226,7 @@ const LiveStatusPanel = ({ liveStatuses }) => {
 };
 
 const TopBar = () => {
-  const { user, logout, liveStatuses } = useContext(AuthContext);
-  const [currentStatus, setCurrentStatus] = useState('offline');
+  const { user, logout, liveStatuses, status: currentStatus, setStatus: setCurrentStatus } = useContext(AuthContext);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());

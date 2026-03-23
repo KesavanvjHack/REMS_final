@@ -13,7 +13,7 @@ from .views import (
     AttendanceViewSet, WorkSessionView, BreakSessionView,
     IdleView, RealTimeStatusView, TeamStatusView, TeamTimesheetView,
     LeaveRequestViewSet, HolidayViewSet,
-    FlaggedAttendanceView, AttendancePolicyViewSet,
+    FlaggedAttendanceView, AttendancePolicyViewSet, TeamListView,
     ReportView, AuditLogViewSet, ExportView,
     IPWhitelistViewSet, ShiftViewSet, ProjectViewSet, TaskViewSet,
     AppUsageLogViewSet, AlertViewSet, DocumentViewSet, ExpenseViewSet,
@@ -63,6 +63,7 @@ urlpatterns = [
     # Real-Time Status (Module 8)
     path('status/me/', RealTimeStatusView.as_view(), name='my-status'),
     path('status/team/', TeamStatusView.as_view(), name='team-status'),
+    path('status/team-list/', TeamListView.as_view(), name='team-list'),
     path('sessions/team-timesheet/', TeamTimesheetView.as_view(), name='team-timesheet'),
 
     # Manager Review – flagged records (Module 12)

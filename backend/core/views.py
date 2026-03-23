@@ -312,7 +312,11 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
     """Attendance records — read only. Status is always auto-calculated."""
     serializer_class = AttendanceSerializer
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ['status', 'date', 'is_flagged']
+    filterset_fields = {
+        'date': ['exact', 'gte', 'lte'],
+        'status': ['exact', 'in'],
+        'is_flagged': ['exact'],
+    }
     ordering_fields = ['date', 'created_at']
     ordering = ['-date']
 
@@ -321,7 +325,18 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Attendance.objects.select_related('user', 'reviewed_by')
+        from django.db.models import Prefetch
+        
+        # Prefetch with explicit ordering for in-memory serializer speed
+        work_sessions_prefetch = Prefetch(
+            'work_sessions', 
+            queryset=WorkSession.objects.order_by('-start_time').prefetch_related(
+                Prefetch('break_sessions', queryset=BreakSession.objects.order_by('-start_time')),
+                Prefetch('idle_logs', queryset=IdleLog.objects.order_by('-start_time'))
+            )
+        )
+
+        qs = Attendance.objects.select_related('user', 'reviewed_by').prefetch_related(work_sessions_prefetch)
         if user.role == 'admin':
             return qs.all()
         if user.role == 'manager':
@@ -371,7 +386,7 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                     'user_role': u.role,
                     'status': 'on_leave',
                     'leave_type': leave.get_leave_type_display() if leave else "Leave",
-                    'reason': f"The reason is: {leave.reason or leave.get_leave_type_display()}"
+                    'reason': leave.reason or leave.get_leave_type_display()
                 })
             elif att:
                 if att.status == Attendance.STATUS_ON_LEAVE:
@@ -382,7 +397,7 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                         'user_role': u.role,
                         'status': att.status,
                         'leave_type': 'Leave',
-                        'reason': f"The reason is: {att.manager_remark or att.flag_reason or 'sick'}"
+                        'reason': att.manager_remark or att.flag_reason or 'No reason provided'
                     })
                 elif att.status == Attendance.STATUS_ABSENT:
                     result.append({
@@ -391,8 +406,8 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                         'user_email': u.email,
                         'user_role': u.role,
                         'status': att.status,
-                        'leave_type': 'Absent',
-                        'reason': 'late check'
+                        'leave_type': '-',
+                        'reason': '-'
                     })
             else:
                 result.append({
@@ -401,8 +416,8 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                     'user_email': u.email,
                     'user_role': u.role,
                     'status': 'absent',
-                    'leave_type': 'Absent',
-                    'reason': 'No checking'
+                    'leave_type': '-',
+                    'reason': '-'
                 })
                 
         return Response(result)
@@ -414,16 +429,34 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = AttendanceReviewSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        attendance.manager_remark = serializer.validated_data['manager_remark']
+        action = serializer.validated_data.get('action')
+        remark = serializer.validated_data.get('manager_remark')
+
+        if action == 'approve':
+            attendance.status = Attendance.STATUS_HALF_DAY
+            attendance.is_flagged = False
+            if not remark:
+                remark = "Approved as half-day by manager."
+        elif action == 'reject':
+            attendance.status = Attendance.STATUS_ABSENT
+            attendance.is_flagged = False
+            if not remark:
+                remark = "Rejected by manager (Absence confirmed)."
+
+        if remark:
+            attendance.manager_remark = remark
+            
         if 'is_flagged' in serializer.validated_data:
             attendance.is_flagged = serializer.validated_data['is_flagged']
+
         attendance.reviewed_by = request.user
         attendance.reviewed_at = timezone.now()
-        attendance.save(update_fields=['manager_remark', 'is_flagged', 'reviewed_by', 'reviewed_at', 'updated_at'])
+        
+        attendance.save(update_fields=['status', 'manager_remark', 'is_flagged', 'reviewed_by', 'reviewed_at', 'updated_at'])
 
         AuditService.log(
             request.user, 'update',
-            f'Attendance reviewed for {attendance.user.email} on {attendance.date}',
+            f'Attendance reviewed ({action}) for {attendance.user.email} on {attendance.date}',
             request
         )
         return Response(AttendanceSerializer(attendance).data)
@@ -452,11 +485,14 @@ class WorkSessionView(APIView):
         action = request.data.get('action')
 
         if action == 'start':
-            session, created = WorkSessionService.start_session(request.user, request)
-            return Response({
-                'status': 'started' if created else 'already_running',
-                'session': WorkSessionSerializer(session).data,
-            })
+            try:
+                session, created = WorkSessionService.start_session(request.user, request)
+                return Response({
+                    'status': 'started' if created else 'already_running',
+                    'session': WorkSessionSerializer(session).data,
+                })
+            except ValueError as e:
+                return Response({'error': str(e)}, status=400)
         elif action == 'stop':
             session, stopped = WorkSessionService.stop_session(request.user)
             if not stopped:
@@ -578,16 +614,12 @@ class TeamStatusView(APIView):
                 role__in=['manager', 'employee']
             ).select_related('department', 'manager')
         elif user.role == 'manager':
-            # Managers see ONLY Employees within their scope (subordinates or department)
-            team_scope = Q(manager=user)
-            if user.department:
-                team_scope |= Q(department=user.department)
-            
+            # Managers see ONLY their subordinates for strict isolation
+            subordinate_ids = user.subordinates.values_list('id', flat=True)
             team = User.objects.filter(
-                team_scope,
-                role='employee',
+                id__in=subordinate_ids,
                 is_active=True
-            ).distinct().select_related('department', 'manager')
+            ).select_related('department', 'manager')
         else:
             team = User.objects.none()
 
@@ -617,8 +649,12 @@ class TeamTimesheetView(APIView):
     def get(self, request):
         user = request.user
         
-        # Managers and Admins should see all employees
-        team = User.objects.filter(is_active=True, role='employee').select_related('department')
+        # Managers should only see their subordinates. Admins see all employees.
+        if user.role == 'manager':
+            subordinate_ids = user.subordinates.values_list('id', flat=True)
+            team = User.objects.filter(id__in=subordinate_ids, is_active=True).select_related('department')
+        else:
+            team = User.objects.filter(is_active=True, role='employee').select_related('department')
 
         # 2. Get today's actual attendance records for these employees
         today = date.today()
@@ -631,10 +667,21 @@ class TeamTimesheetView(APIView):
             except ValueError:
                 pass
 
+        from django.db.models import Prefetch
+        
+        # Order-aware prefetching for speed
+        work_sessions_prefetch = Prefetch(
+            'work_sessions', 
+            queryset=WorkSession.objects.order_by('-start_time').prefetch_related(
+                Prefetch('break_sessions', queryset=BreakSession.objects.order_by('-start_time')),
+                Prefetch('idle_logs', queryset=IdleLog.objects.order_by('-start_time'))
+            )
+        )
+
         attendances = Attendance.objects.filter(
             user__in=team,
             date=today
-        ).select_related('user', 'reviewed_by').prefetch_related('work_sessions')
+        ).select_related('user', 'reviewed_by').prefetch_related(work_sessions_prefetch)
         
         # Map user ID to their attendance record
         att_map = {a.user_id: a for a in attendances}
@@ -644,22 +691,12 @@ class TeamTimesheetView(APIView):
             member_att = att_map.get(member.id)
             
             if member_att:
-                # Use actual attendance data
+                # Use actual attendance data (Serializer handles last_logout and hours)
                 record = AttendanceSerializer(member_att).data
                 record['user_name'] = member.full_name
                 record['user_email'] = member.email
                 if member.department:
                     record['department_name'] = member.department.name
-                    
-                # Calculate last logout time from work sessions
-                last_logout = None
-                sessions = member_att.work_sessions.all()
-                if sessions:
-                    # Get the end_time of the latest session
-                    latest_session = max(sessions, key=lambda s: s.start_time)
-                    if latest_session.end_time:
-                        last_logout = latest_session.end_time.isoformat()
-                record['last_logout'] = last_logout
             else:
                 # Generate a dummy 'absent' record
                 record = {
@@ -679,6 +716,7 @@ class TeamTimesheetView(APIView):
                     'manager_remark': '',
                     'reviewed_by': None,
                     'reviewed_at': None,
+                    'first_login': None,
                     'last_logout': None
                 }
 
@@ -793,6 +831,22 @@ class HolidayViewSet(viewsets.ModelViewSet):
 # (Handled via AttendanceViewSet.review action above)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+class TeamListView(APIView):
+    """
+    Simple view to return a list of subordinates for a manager,
+    or all employees for an admin. Used for filtering dropdowns.
+    """
+    permission_classes = [IsManager]
+
+    def get(self, request):
+        user = request.user
+        if user.role == 'manager':
+            team = user.subordinates.filter(is_active=True)
+        else:
+            team = User.objects.filter(role='employee', is_active=True)
+        data = [{'id': m.id, 'full_name': m.full_name, 'email': m.email} for m in team]
+        return Response(data)
+
 class FlaggedAttendanceView(generics.ListAPIView):
     """List all flagged attendance records for manager review."""
     serializer_class = AttendanceSerializer
@@ -803,11 +857,32 @@ class FlaggedAttendanceView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Attendance.objects.filter(is_flagged=True).select_related('user', 'reviewed_by')
+        review_status = self.request.query_params.get('review_status', 'pending')
+        target_user_id = self.request.query_params.get('user_id')
+        from_date = self.request.query_params.get('from_date')
+        to_date = self.request.query_params.get('to_date')
+
+        if review_status == 'reviewed':
+            # Records that were flagged but are now reviewed (is_flagged=False, reviewed_by present)
+            # OR records that were reviewed and kept as flagged (is_flagged=True, reviewed_by present)
+            qs = Attendance.objects.filter(reviewed_by__isnull=False).select_related('user', 'reviewed_by')
+        else:
+            # Default: only pending (is_flagged=True, not necessarily reviewed yet)
+            qs = Attendance.objects.filter(is_flagged=True, reviewed_by__isnull=True).select_related('user', 'reviewed_by')
+
         if user.role == 'manager':
             subordinate_ids = user.subordinates.values_list('id', flat=True)
             qs = qs.filter(user__in=subordinate_ids)
-        return qs
+            
+        if target_user_id and target_user_id != 'all':
+            qs = qs.filter(user_id=target_user_id)
+            
+        if from_date:
+            qs = qs.filter(date__gte=from_date)
+        if to_date:
+            qs = qs.filter(date__lte=to_date)
+            
+        return qs.order_by('-date', '-updated_at')
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -844,30 +919,50 @@ class ReportView(APIView):
         days = int(request.query_params.get('days', 7))
         user_id = request.query_params.get('user_id')
 
-        # Determine whom to report on
-        target_user = None
-        if user_id and request.user.role in ('admin', 'manager'):
-            try:
-                target_user = User.objects.get(id=user_id)
-            except User.DoesNotExist:
-                return Response({'detail': 'User not found.'}, status=404)
-        elif request.user.role == 'employee':
-            target_user = request.user
+        # Determine which users to report on for isolation
+        user_ids = None  # None means 'all' (Admin only)
+        if request.user.role == 'employee':
+            user_ids = [request.user.id]
+        elif request.user.role == 'manager':
+            # Managers can only see their subordinates
+            subordinate_ids = list(request.user.subordinates.values_list('id', flat=True))
+            if user_id:
+                # Check if the requested user_id is actually a subordinate
+                # Use string comparison for UUID safety
+                subordinate_ids_str = [str(sid) for sid in subordinate_ids]
+                if str(user_id) in subordinate_ids_str:
+                    user_ids = [user_id]
+                else:
+                    return Response({'detail': 'Permission denied: User is not your subordinate.'}, status=403)
+            else:
+                user_ids = subordinate_ids
+        elif request.user.role == 'admin':
+            if user_id:
+                user_ids = [user_id]
+            # else user_ids remains None (all)
 
+        # Date range parsing
         from_date = request.query_params.get('from_date')
         to_date = request.query_params.get('to_date')
 
         if from_date:
             from datetime import datetime
-            from_date = datetime.strptime(from_date, '%Y-%m-%d').date()
+            try:
+                from_date = datetime.strptime(from_date, '%Y-%m-%d').date()
+            except ValueError:
+                from_date = None
         if to_date:
             from datetime import datetime
-            to_date = datetime.strptime(to_date, '%Y-%m-%d').date()
+            try:
+                to_date = datetime.strptime(to_date, '%Y-%m-%d').date()
+            except ValueError:
+                to_date = None
 
         if report_type == 'summary':
-            data = ReportService.get_attendance_summary(target_user, from_date, to_date)
+            data = ReportService.get_attendance_summary(user_ids, from_date, to_date)
         elif report_type == 'daily':
-            data = ReportService.get_daily_data(target_user, days)
+            # Update get_daily_data to also support user_ids list
+            data = ReportService.get_daily_data(user_ids, days)
         elif report_type == 'team' and request.user.role in ('admin', 'manager'):
             user = request.user
             if user.role == 'manager':
@@ -878,7 +973,7 @@ class ReportView(APIView):
             for uid in subordinate_ids:
                 try:
                     member = User.objects.get(id=uid)
-                    summary = ReportService.get_attendance_summary(member, from_date, to_date)
+                    summary = ReportService.get_attendance_summary([uid], from_date, to_date)
                     summary['user_id'] = str(uid)
                     summary['user_name'] = member.full_name
                     data.append(summary)
@@ -907,10 +1002,14 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     ordering = ['-timestamp']
 
     def get_queryset(self):
+        user = self.request.user
         qs = AuditLog.objects.select_related('user').all()
-        if getattr(self.request.user, 'role', '') == 'admin':
+        if user.role == 'admin':
             return qs
-        return qs.filter(user=self.request.user)
+        if user.role == 'manager':
+            subordinate_ids = user.subordinates.values_list('id', flat=True)
+            return qs.filter(Q(user=user) | Q(user_id__in=subordinate_ids))
+        return qs.filter(user=user)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

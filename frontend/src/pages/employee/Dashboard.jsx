@@ -5,16 +5,13 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
 } from 'recharts';
 import { ClockIcon, ChartBarIcon, CalendarDaysIcon, CheckBadgeIcon } from '@heroicons/react/24/outline';
-import useIdleDetection from '../../hooks/useIdleDetection';
+import { formatDuration } from '../../utils/format';
 
 const EmployeeDashboard = () => {
   const { user } = useContext(AuthContext);
   const [summary, setSummary] = useState(null);
   const [dailyData, setDailyData] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // Initialize idle detection hook for the employee
-  useIdleDetection(15);
 
   useEffect(() => {
     fetchData();
@@ -35,7 +32,26 @@ const EmployeeDashboard = () => {
     }
   };
 
-  if (loading) return <div className="text-indigo-400">Loading Dashboard...</div>;
+  // Loading skeletons for a premium feel
+  if (loading) {
+    return (
+      <div className="space-y-6 page-fade-in">
+        <h1 className="text-2xl font-bold tracking-tight text-white mb-6">Welcome back...</h1>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl flex items-center gap-4">
+              <div className="p-4 rounded-xl bg-slate-700 w-16 h-16 skeleton-pulse"></div>
+              <div className="space-y-2">
+                <div className="h-4 w-24 bg-slate-700 rounded skeleton-pulse"></div>
+                <div className="h-8 w-16 bg-slate-700 rounded skeleton-pulse"></div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl h-96 mt-8 skeleton-pulse"></div>
+      </div>
+    );
+  }
 
   const StatCard = ({ title, value, icon: Icon, colorClass }) => (
     <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl flex items-center gap-4">
@@ -50,7 +66,7 @@ const EmployeeDashboard = () => {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-fade-in">
       <h1 className="text-2xl font-bold tracking-tight text-white mb-6">Welcome back, {user?.full_name?.split(' ')[0]}</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -62,7 +78,7 @@ const EmployeeDashboard = () => {
         />
         <StatCard 
           title="Avg Daily Hours" 
-          value={`${summary?.avg_work_hours || 0}h`} 
+          value={formatDuration((summary?.avg_work_hours || 0) * 3600)} 
           icon={ClockIcon} 
           colorClass="bg-indigo-500" 
         />

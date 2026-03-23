@@ -70,7 +70,7 @@ const ActivityLogs = () => {
   }, [allLogs, filter]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-fade-in">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
@@ -107,7 +107,25 @@ const ActivityLogs = () => {
 
       <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl">
         {loading ? (
-          <div className="p-8 text-center text-slate-400 animate-pulse">Loading logs...</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm text-slate-400">
+              <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+                <tr>
+                  <th className="px-6 py-4 font-medium h-12 skeleton-pulse"></th>
+                  <th className="px-6 py-4 font-medium h-12 skeleton-pulse"></th>
+                  <th className="px-6 py-4 font-medium h-12 skeleton-pulse"></th>
+                  <th className="px-6 py-4 font-medium h-12 skeleton-pulse"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700">
+                {[...Array(5)].map((_, i) => (
+                  <tr key={i} className="h-16 skeleton-pulse">
+                    <td colSpan="4"></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : displayedLogs.length === 0 ? (
           <div className="p-8 text-center text-slate-400 italic">No activity logs recorded {filter === 'today' ? 'today' : 'yet'}.</div>
         ) : (

@@ -1,40 +1,80 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useContext } from 'react';
 import api from '../api/axios';
+import { AuthContext } from '../context/AuthContext';
 
 const useIdleDetection = (idleTimeMinutes = 15) => {
+  const { status, policy } = useContext(AuthContext);
   const [isIdle, setIsIdle] = useState(false);
   const idleTimeoutRef = useRef(null);
+  const isIdleRef = useRef(false);
 
-  const handleIdleStart = async () => {
+  // Helper to check if we are within the allowed work window
+  const isWithinWorkWindow = useCallback(() => {
+    if (!policy?.shift_start_time || !policy?.shift_end_time) return true;
+    
+    const now = new Date();
+    const [startH, startM] = policy.shift_start_time.split(':').map(Number);
+    const [endH, endM] = policy.shift_end_time.split(':').map(Number);
+    
+    const start = new Date();
+    start.setHours(startH, startM, 0, 0);
+    
+    const end = new Date();
+    end.setHours(endH, endM, 0, 0);
+    
+    return now >= start && now <= end;
+  }, [policy]);
+
+  const handleIdleStart = useCallback(async () => {
+    if (isIdleRef.current) return; // already idle, don't double-fire
+    isIdleRef.current = true;
     setIsIdle(true);
     try {
       await api.post('/sessions/idle/', { action: 'start' });
     } catch (err) {
       console.error('Failed to start idle log', err);
     }
-  };
+  }, []);
 
-  const handleIdleStop = async () => {
+  const handleIdleStop = useCallback(async () => {
+    if (!isIdleRef.current) return; // not idle, nothing to stop
+    isIdleRef.current = false;
     setIsIdle(false);
     try {
       await api.post('/sessions/idle/', { action: 'stop' });
     } catch (err) {
       console.error('Failed to stop idle log', err);
     }
-  };
+  }, []);
 
-  const resetTimer = () => {
-    if (isIdle) {
+  const resetTimer = useCallback(() => {
+    // If currently idle, resume activity
+    if (isIdleRef.current) {
       handleIdleStop();
     }
+    
     clearTimeout(idleTimeoutRef.current);
-    idleTimeoutRef.current = setTimeout(
-      handleIdleStart,
-      idleTimeMinutes * 60 * 1000
-    );
-  };
+
+    // ONLY detect idle if user is working AND within work window
+    if (status === 'working' && isWithinWorkWindow()) {
+      idleTimeoutRef.current = setTimeout(handleIdleStart, idleTimeMinutes * 60 * 1000);
+    }
+  }, [idleTimeMinutes, handleIdleStart, handleIdleStop, status, isWithinWorkWindow]);
 
   useEffect(() => {
+    // 1. Sync initial state from backend
+    api.get('/status/me/')
+      .then(res => {
+        if (res.data.status === 'idle') {
+          isIdleRef.current = true;
+          setIsIdle(true);
+        }
+      })
+      .catch(err => {
+        console.error('Failed to sync initial idle state', err);
+      });
+
+    // 2. Setup event listeners
     const events = [
       'mousemove',
       'keydown',
@@ -48,14 +88,11 @@ const useIdleDetection = (idleTimeMinutes = 15) => {
       'MSPointerMove',
     ];
 
-    const handleEvent = () => resetTimer();
-
-    // Attach event listeners
     events.forEach((event) => {
-      document.addEventListener(event, handleEvent, false);
+      document.addEventListener(event, resetTimer, false);
     });
 
-    // Initial start
+    // Kick off the initial countdown
     resetTimer();
 
     // Expose mock function for testing
@@ -66,11 +103,11 @@ const useIdleDetection = (idleTimeMinutes = 15) => {
 
     return () => {
       events.forEach((event) => {
-        document.removeEventListener(event, handleEvent, false);
+        document.removeEventListener(event, resetTimer, false);
       });
       clearTimeout(idleTimeoutRef.current);
     };
-  }, [idleTimeMinutes, isIdle]);
+  }, [resetTimer, handleIdleStart]); // stable refs — won't loop
 
   return isIdle;
 };

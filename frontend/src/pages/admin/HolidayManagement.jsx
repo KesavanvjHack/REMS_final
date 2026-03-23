@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import api from '../../api/axios';
 import { format, startOfWeek, startOfMonth, endOfWeek, endOfMonth } from 'date-fns';
 import { CalendarIcon, TrashIcon, ArrowDownTrayIcon, UsersIcon } from '@heroicons/react/24/outline';
+import { AuthContext } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
 const HolidayManagement = () => {
   const [holidays, setHolidays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [newHoliday, setNewHoliday] = useState({ name: '', date: '', is_optional: false });
+  const { policy } = useContext(AuthContext);
 
   // Today's Leaves State
   const [todaysLeaves, setTodaysLeaves] = useState([]);
@@ -150,7 +152,7 @@ const HolidayManagement = () => {
   };
 
   return (
-    <div className="space-y-8 pb-10">
+    <div className="space-y-8 pb-10 page-fade-in">
       {/* Header */}
       <div className="flex items-center gap-3">
         <div className="p-2 bg-indigo-500/20 rounded-lg">
@@ -272,7 +274,7 @@ const HolidayManagement = () => {
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
               <tr>
-                <th className="px-6 py-4 font-semibold">Employee</th>
+                <th className="px-6 py-4 font-semibold">Name</th>
                 <th className="px-6 py-4 font-semibold">Role</th>
                 <th className="px-6 py-4 font-semibold">Leave Type</th>
                 <th className="px-6 py-4 font-semibold">Reason</th>
@@ -281,7 +283,11 @@ const HolidayManagement = () => {
             </thead>
             <tbody className="divide-y divide-slate-700/50">
               {loadingLeaves ? (
-                <tr><td colSpan="5" className="px-6 py-8 text-center text-indigo-400">Loading today's leaves...</td></tr>
+                [...Array(3)].map((_, i) => (
+                  <tr key={i} className="h-16 skeleton-pulse">
+                    <td colSpan="5"></td>
+                  </tr>
+                ))
               ) : todaysLeaves.length === 0 ? (
                 <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-500">No leaves logged for today.</td></tr>
               ) : (
@@ -298,17 +304,35 @@ const HolidayManagement = () => {
                         {leave.employee_role || 'Employee'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 capitalize">{leave.leave_type}</td>
+                    <td className="px-6 py-4">{leave.leave_type === '-' ? '-' : (leave.leave_type || 'General')}</td>
                     <td className="px-6 py-4 max-w-[200px] truncate" title={leave.reason}>{leave.reason}</td>
                     <td className="px-6 py-4">
-                      <span className={`px-2 py-1 rounded text-xs border ${
-                        leave.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                        leave.status === 'rejected' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
-                        leave.status === 'cancelled' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' :
-                        'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                      }`}>
-                        {leave.status.toUpperCase()}
-                      </span>
+                      {(() => {
+                        const now = new Date();
+                        const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+                        const istDate = new Date(istString);
+                        const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+                        const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
+                        const shiftEndMinutes = endHour * 60 + endMin;
+                        const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
+
+                        const isCalculating = isBeforeShiftEnd && 
+                                            leave.status === 'absent';
+                        
+                        const displayStatus = isCalculating ? 'CALCULATING...' : leave.status.toUpperCase();
+
+                        return (
+                          <span className={`px-2 py-1 rounded text-xs border ${
+                            isCalculating ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                            leave.status === 'on_leave' || leave.status === 'approved' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' :
+                            leave.status === 'rejected' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                            leave.status === 'cancelled' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' :
+                            'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                          }`}>
+                            {displayStatus}
+                          </span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))
@@ -380,7 +404,11 @@ const HolidayManagement = () => {
               </thead>
               <tbody className="divide-y divide-slate-700/50">
                 {loading ? (
-                  <tr><td colSpan="4" className="px-6 py-8 text-center text-indigo-400">Loading holidays...</td></tr>
+                  [...Array(3)].map((_, i) => (
+                    <tr key={i} className="h-16 skeleton-pulse">
+                      <td colSpan="4"></td>
+                    </tr>
+                  ))
                 ) : holidays.length === 0 ? (
                   <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-500">No holidays configured</td></tr>
                 ) : (

@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useContext } from 'react';
 import api from '../../api/axios';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { UserGroupIcon, ArrowPathIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
+import { formatDuration, formatLastLogout, formatDecimalHours } from '../../utils/format';
+import { AuthContext } from '../../context/AuthContext';
 
 const STATUS_COLORS = {
   working:  'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
@@ -16,6 +18,7 @@ const ATTENDANCE_COLORS = {
   half_day: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
   absent:   'bg-rose-500/10 text-rose-400 border border-rose-500/20',
   on_leave: 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20',
+  holiday:  'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20',
 };
 
 /**
@@ -35,6 +38,7 @@ const TeamAttendance = () => {
   const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
+  const { policy } = useContext(AuthContext);
 
   // Date filter state for export
   const [startDate, setStartDate] = useState('');
@@ -104,19 +108,21 @@ const TeamAttendance = () => {
       return;
     }
 
-    const headers = ['Date', 'Employee Name', 'Email', 'Live Status', 'Attendance Status', 'Work Hours', 'Break (Hours)', 'Idle (Hours)', 'Flagged'];
+    const headers = ['Date', 'Employee Name', 'Email', 'Login Time', 'Last Logout', 'Attendance Status', 'Work Hours', 'Break (Hours)', 'Idle (Hours)', 'Anomalies', 'Remarks / Reason'];
     const csvContent = [
       headers.join(','),
       ...rawData.map(rec => [
          format(new Date(rec.date), 'yyyy-MM-dd'),
          rec.user_name,
          rec.user_email,
-         rec.live_status || 'offline',
+         formatLastLogout(rec.first_login),
+         formatLastLogout(rec.last_logout),
          rec.status,
-         rec.work_hours,
-         (rec.total_break_seconds / 3600).toFixed(2),
-         (rec.total_idle_seconds / 3600).toFixed(2),
-         rec.is_flagged ? `Yes - ${rec.flag_reason}` : 'No'
+         formatDecimalHours(rec.effective_work_seconds),
+         formatDecimalHours(rec.total_break_seconds),
+         formatDecimalHours(rec.total_idle_seconds),
+         rec.is_flagged ? `Yes - ${rec.flag_reason}` : 'No',
+         rec.manager_remark || rec.flag_reason || '-'
       ].map(v => `"${v}"`).join(','))
     ].join('\n');
 
@@ -142,7 +148,7 @@ const TeamAttendance = () => {
   const uniqueEmployees = Array.from(new Set(attendance.map(a => a.user_name))).filter(Boolean).sort();
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 page-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between xl:items-start gap-4 mb-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-indigo-500/20 rounded-lg">
@@ -229,62 +235,104 @@ const TeamAttendance = () => {
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
               <tr>
-                <th className="px-6 py-4 font-semibold tracking-wider">Date</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Employee</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-center">Live Status</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-center">Last Logout</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-center">Attendance</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-right">Work (h)</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-right">Break (h)</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-right">Idle (h)</th>
-                <th className="px-6 py-4 font-semibold tracking-wider text-center">Flagged</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Date</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Employee</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center">Login Time</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center hidden lg:table-cell">Last Logout</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center">Attendance</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-right">Work (h)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-right">Break (h)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-right">Idle (h)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center">Anomalies</th>
+                <th className="px-3 py-4 font-semibold tracking-wider">Remarks / Reason</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
-              {attendance.map((record) => (
+              {loading ? (
+                [...Array(5)].map((_, i) => (
+                  <tr key={i}>
+                    {[...Array(11)].map((_, j) => (
+                      <td key={j} className="px-3 py-4">
+                        <div className="h-4 w-full skeleton-pulse"></div>
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                attendance
+                  .filter(record => new Date(record.date) <= new Date())
+                  .map((record) => {
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  const now = new Date();
+                  const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+                  const istDate = new Date(istString);
+                  const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+                  const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
+                  const shiftEndMinutes = endHour * 60 + endMin;
+                  const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
+
+                  const isCalculating = record.date === todayStr && 
+                                      isBeforeShiftEnd &&
+                                      record.status !== 'present' && 
+                                      record.status !== 'on_leave' && 
+                                      record.status !== 'holiday';
+                  const displayStatus = isCalculating ? 'calculating...' : record.status;
+                  
+                  return (
                 <tr key={record.id} className="hover:bg-slate-700/20 transition-colors">
-                  <td className="px-6 py-4 font-medium text-slate-200">
+                  <td className="px-3 py-4 font-medium text-slate-200 text-xs">
                     {format(new Date(record.date), 'MMM dd, yyyy')}
                   </td>
-                  <td className="px-6 py-4">
+                  <td className="px-3 py-4">
                     <div>
-                      <p className="font-semibold text-slate-200">{record.user_name}</p>
-                      <p className="text-xs text-slate-500">{record.user_email}</p>
+                      <p className="font-semibold text-slate-200 text-xs">{record.user_name}</p>
+                      <p className="text-[10px] text-slate-500 truncate max-w-[100px]">{record.user_email}</p>
                     </div>
                   </td>
-                  {/* Live status — annotated by backend from StatusService */}
-                  <td className="px-6 py-4 text-center">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${STATUS_COLORS[record.live_status] || STATUS_COLORS.offline}`}>
-                      {(record.live_status || 'offline').replace('_', ' ')}
+                  <td className="px-3 py-4 text-center">
+                    <span className="text-slate-300 font-mono text-[10px] whitespace-nowrap">
+                      {formatLastLogout(record.first_login)}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-center">
-                    {record.last_logout ? (
-                      <span className="text-slate-300 font-mono text-sm whitespace-nowrap">
-                        {format(new Date(record.last_logout), 'hh:mm:ss a')}
+                  <td className="px-3 py-4 text-center hidden lg:table-cell">
+                    <span className="text-slate-300 font-mono text-[10px] whitespace-nowrap">
+                      {formatLastLogout(record.last_logout)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-4 text-center">
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest ${isCalculating ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : (ATTENDANCE_COLORS[record.status] || 'bg-slate-500/10 text-slate-400')}`}>
+                      {displayStatus?.replace('_', ' ')}
+                    </span>
+                  </td>
+                  <td className="px-3 py-4 text-right text-emerald-400 font-mono text-[11px] whitespace-nowrap">{formatDuration(record.effective_work_seconds)}</td>
+                  <td className="px-3 py-4 text-right text-cyan-400 font-mono text-[11px] whitespace-nowrap">{formatDuration(record.total_break_seconds)}</td>
+                  <td className="px-3 py-4 text-right text-amber-400 font-mono text-[11px] whitespace-nowrap">{formatDuration(record.total_idle_seconds)}</td>
+                  <td className="px-3 py-4 text-center">
+                    {record.is_flagged ? (
+                      <span className="text-rose-400 font-bold text-[10px] bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>
+                        Flagged
                       </span>
                     ) : (
                       <span className="text-slate-600">—</span>
                     )}
                   </td>
-                  <td className="px-6 py-4 text-center">
-                    <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${ATTENDANCE_COLORS[record.status] || 'bg-slate-500/10 text-slate-400'}`}>
-                      {record.status?.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-right text-emerald-400 font-mono">{record.work_hours}</td>
-                  <td className="px-6 py-4 text-right text-cyan-400 font-mono">{(record.total_break_seconds / 3600).toFixed(2)}</td>
-                  <td className="px-6 py-4 text-right text-amber-400 font-mono">{(record.total_idle_seconds / 3600).toFixed(2)}</td>
-                  <td className="px-6 py-4 text-center">
-                    {record.is_flagged ? (
-                      <span className="text-rose-400 font-bold" title={record.flag_reason}>⚑ Yes</span>
+                  <td className="px-3 py-4">
+                    {record.manager_remark ? (
+                      <div className="flex flex-col">
+                        <span className="text-indigo-400 text-[10px] font-medium italic underline underline-offset-4 decoration-indigo-500/30 uppercase tracking-wider">Note:</span>
+                        <p className="text-slate-300 text-[10px] mt-1 leading-relaxed truncate max-w-[150px]" title={record.manager_remark}>{record.manager_remark}</p>
+                      </div>
+                    ) : record.flag_reason ? (
+                      <p className="text-slate-400 text-[10px] italic leading-relaxed truncate max-w-[150px]" title={record.flag_reason}>{record.flag_reason}</p>
                     ) : (
-                      <span className="text-slate-600">—</span>
+                      <span className="text-slate-600 font-mono text-[10px]">-</span>
                     )}
                   </td>
                 </tr>
-              ))}
-              {attendance.length === 0 && (
+              );
+            })
+          )}
+          {!loading && attendance.length === 0 && (
                 <tr>
                   <td colSpan="8" className="px-6 py-10 text-center text-slate-500 italic">
                     No timesheet records found for your team.

@@ -101,7 +101,24 @@ const AuditLogs = () => {
   };
 
 
-  if (loading) return <div className="text-indigo-400">Loading Audit Logs...</div>;
+  // Loading skeletons for a premium feel
+  if (loading) {
+    return (
+      <div className="space-y-6 page-fade-in">
+        <div className="flex justify-between items-center mb-6">
+          <div className="h-8 w-64 bg-slate-700 rounded skeleton-pulse"></div>
+          <div className="h-10 w-48 bg-slate-700 rounded skeleton-pulse"></div>
+        </div>
+        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-6 h-40 skeleton-pulse mb-6"></div>
+        <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden mt-6">
+          <div className="p-4 bg-slate-900/50 h-10 skeleton-pulse"></div>
+          {[...Array(5)].map((_, i) => (
+            <div key={i} className="p-6 border-b border-slate-700/50 h-16 skeleton-pulse"></div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   const filteredLogs = logs.filter(log => {
     if (filter === 'all') return true;
@@ -113,7 +130,7 @@ const AuditLogs = () => {
   });
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="space-y-6 pb-10 page-fade-in">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-indigo-500/20 rounded-lg">
