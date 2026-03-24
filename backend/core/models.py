@@ -126,6 +126,10 @@ class AttendancePolicy(models.Model):
     name = models.CharField(max_length=100, default='Default Policy')
     min_working_hours = models.DecimalField(
         max_digits=4, decimal_places=2, default=8.00,
+        help_text='Minimum hours for Full Day status'
+    )
+    present_hours = models.DecimalField(
+        max_digits=4, decimal_places=2, default=8.00,
         help_text='Minimum hours to mark attendance as Present'
     )
     half_day_hours = models.DecimalField(
@@ -143,6 +147,10 @@ class AttendancePolicy(models.Model):
     shift_end_time = models.TimeField(
         default=datetime.time(17, 30),
         help_text='Time after which ongoing attendance automatically drops the calculating status'
+    )
+    session_timeout_hours = models.PositiveIntegerField(
+        default=24,
+        help_text='Maximum duration in hours for a single login session before auto-logout'
     )
     is_active = models.BooleanField(default=True)
     department = models.ForeignKey(

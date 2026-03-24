@@ -41,7 +41,7 @@ class DepartmentAdmin(admin.ModelAdmin):
 
 @admin.register(AttendancePolicy)
 class AttendancePolicyAdmin(admin.ModelAdmin):
-    list_display = ['name', 'min_working_hours', 'half_day_hours', 'idle_threshold_minutes', 'is_active']
+    list_display = ['name', 'min_working_hours', 'half_day_hours', 'idle_threshold_minutes', 'session_timeout_hours', 'is_active']
 
 
 @admin.register(Attendance)

@@ -85,6 +85,13 @@ class NotificationService:
         recipients = User.objects.filter(role__in=['admin', 'manager']).exclude(id=sender.id).distinct()
         NotificationService._send_notifications(sender, recipients, title, message, notif_type)
 
+    @staticmethod
+    def notify_all_active_users(sender, title, message, notif_type='system'):
+        """Broadcast a notification to all active users in the system."""
+        from .models import User
+        recipients = User.objects.filter(is_active=True).exclude(id=sender.id).distinct()
+        NotificationService._send_notifications(sender, recipients, title, message, notif_type)
+
 # ── Attendance Engine ──────────────────────────────────────────────────────────
 
 class AttendanceService:
@@ -146,36 +153,41 @@ class AttendanceService:
             for il in ws.idle_logs.filter(end_time__isnull=False):
                 total_idle += int((il.end_time - il.start_time).total_seconds())
 
-        # Effective productive seconds
-        effective_seconds = max(0, total_work - total_break - total_idle)
-        effective_hours = effective_seconds / 3600
+        # Status calculation based only on total logged-in work hours
+        total_work_hours = total_work / 3600
 
         # Get policy
         try:
             policy = AttendancePolicy.objects.filter(is_active=True).first()
+            present_hours = float(policy.present_hours) if policy else 8.0
             min_hours = float(policy.min_working_hours) if policy else 8.0
             half_day_hours = float(policy.half_day_hours) if policy else 4.0
             idle_threshold_minutes = policy.idle_threshold_minutes if policy else 15
         except Exception:
+            present_hours = 8.0
             min_hours = 8.0
             half_day_hours = 4.0
             idle_threshold_minutes = 15
 
         # Determine status
+        auto_remark = ""
         if attendance.status in (
             attendance.STATUS_ON_LEAVE,
             attendance.STATUS_HOLIDAY,
         ):
             status = attendance.status  # don't override leave/holiday
-        elif effective_hours >= min_hours:
+        elif total_work_hours >= present_hours:
             status = attendance.STATUS_PRESENT
             auto_remark = ""
-        elif effective_hours >= half_day_hours:
+        elif total_work_hours >= min_hours:
+            status = attendance.STATUS_PRESENT  # min_hours still counts as Present (Full Day)
+            auto_remark = ""
+        elif total_work_hours >= half_day_hours:
             status = attendance.STATUS_HALF_DAY
-            auto_remark = f"Hours ({effective_hours:.2f}h) below required {min_hours}h for Present status."
+            auto_remark = f"Hours ({total_work_hours:.2f}h) below required {min_hours}h for Present status."
         elif total_work > 0:
-            status = attendance.STATUS_HALF_DAY if effective_hours > 0 else attendance.STATUS_ABSENT
-            auto_remark = f"Hours ({effective_hours:.2f}h) below threshold for Half Day."
+            status = attendance.STATUS_HALF_DAY if total_work_hours > 0 else attendance.STATUS_ABSENT
+            auto_remark = f"Hours ({total_work_hours:.2f}h) below threshold for Half Day."
         else:
             status = attendance.STATUS_ABSENT
             auto_remark = "No work hours recorded."
@@ -203,7 +215,7 @@ class AttendanceService:
             attendance.flag_reason = ''
         attendance.save(update_fields=[
             'total_work_seconds', 'total_break_seconds', 'total_idle_seconds',
-            'status', 'is_flagged', 'flag_reason', 'updated_at'
+            'status', 'is_flagged', 'flag_reason', 'manager_remark', 'updated_at'
         ])
         return attendance
 

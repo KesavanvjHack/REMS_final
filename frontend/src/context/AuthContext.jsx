@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useRef } from 'react';
+import { createContext, useState, useEffect, useRef, useCallback } from 'react';
 import { jwtDecode } from 'jwt-decode';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
@@ -15,105 +15,20 @@ export const AuthProvider = ({ children }) => {
   const wsRef = useRef(null);
   const heartbeatRef = useRef(null);
 
-  useEffect(() => {
-    checkUserStatus();
-    return () => disconnectWebSocket();
+  const disconnectWebSocket = useCallback(() => {
+    if (heartbeatRef.current) {
+      clearInterval(heartbeatRef.current);
+      heartbeatRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
   }, []);
 
-  const fetchInitialStatuses = async (role) => {
-    if (role === 'admin' || role === 'manager') {
-      try {
-        const res = await api.get('/status/team/');
-        const team = res.data.results || res.data;
-        const initial = {};
-        team.forEach(member => {
-          initial[member.user_id] = member.status;
-        });
-        setLiveStatuses(initial);
-      } catch (err) {
-        console.error('Failed to prepare initial live statuses', err);
-      }
-    }
-
-    // Fetch idle threshold for all roles (or just employee, but harmless for others)
-    try {
-      const policyRes = await api.get('/policy/');
-      const policies = policyRes.data.results || policyRes.data;
-      const activePolicy = policies.find(p => p.is_active) || policies[0];
-      if (activePolicy) {
-        setIdleThreshold(activePolicy.idle_threshold_minutes);
-        setPolicy(activePolicy);
-      }
-    } catch (err) {
-      console.error('Failed to fetch idle threshold', err);
-    }
-  };
-
-  const checkUserStatus = async () => {
-    const token = localStorage.getItem('access_token');
-    if (token) {
-      try {
-        const decoded = jwtDecode(token);
-        // Token expired?
-        if (decoded.exp * 1000 < Date.now()) {
-          logout();
-        } else {
-          // Fetch full user profile
-          const res = await api.get('/auth/me/');
-          setUser(res.data);
-          fetchInitialStatuses(res.data.role);
-          connectWebSocket(res.data);
-        }
-      } catch (error) {
-        logout();
-      }
-    }
-    setLoading(false);
-  };
-
-  const login = async (email, password, otp) => {
-    try {
-      const res = await api.post('/auth/login/', { email, password, otp });
-      localStorage.setItem('access_token', res.data.access);
-      localStorage.setItem('refresh_token', res.data.refresh);
-      setUser(res.data.user);
-      
-      const role = res.data.user.role;
-      toast.success('Login Successful');
-      fetchInitialStatuses(role);
-      connectWebSocket(res.data.user);
-      
-      // Return role to redirect appropriately
-      return role; 
-    } catch (error) {
-      const msg = error.response?.data?.detail || 'Invalid credentials';
-      toast.error(msg);
-      throw error;
-    }
-  };
-
-  const logout = async () => {
-    try {
-      const refresh = localStorage.getItem('refresh_token');
-      if (refresh) {
-        await api.post('/auth/logout/', { refresh });
-      }
-    } catch (error) {
-      console.error('Logout error', error);
-    } finally {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      setUser(null);
-      disconnectWebSocket();
-      setLiveStatuses({});
-      window.location.href = '/login';
-    }
-  };
-
-  const connectWebSocket = (currentUser) => {
+  const connectWebSocket = useCallback((currentUser) => {
     if (wsRef.current || !currentUser) return;
     try {
-      // Connecting to the Django Channels WebSocket endpoint
       const ws = new WebSocket('ws://localhost:8000/ws/status/');
       ws.onopen = () => {
         console.log('Status WebSocket Connected');
@@ -142,18 +57,124 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       console.error('Failed to connect to status websocket', err);
     }
-  };
+  }, []);
 
-  const disconnectWebSocket = () => {
-    if (heartbeatRef.current) {
-      clearInterval(heartbeatRef.current);
-      heartbeatRef.current = null;
+  const logout = useCallback(async () => {
+    try {
+      const refresh = localStorage.getItem('refresh_token');
+      if (refresh) {
+        await api.post('/auth/logout/', { refresh });
+      }
+    } catch (error) {
+      console.error('Logout error', error);
+    } finally {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      setUser(null);
+      disconnectWebSocket();
+      setLiveStatuses({});
+      window.location.href = '/login';
     }
-    if (wsRef.current) {
-      wsRef.current.close();
-      wsRef.current = null;
+  }, [disconnectWebSocket]);
+
+  const fetchInitialStatuses = useCallback(async (role) => {
+    if (role === 'admin' || role === 'manager') {
+      try {
+        const res = await api.get('/status/team/');
+        const team = res.data.results || res.data;
+        const initial = {};
+        team.forEach(member => {
+          initial[member.user_id] = member.status;
+        });
+        setLiveStatuses(initial);
+      } catch (err) {
+        console.error('Failed to prepare initial live statuses', err);
+      }
     }
-  };
+
+    try {
+      const policyRes = await api.get('/policy/');
+      const policies = policyRes.data.results || policyRes.data;
+      const activePolicy = policies.find(p => p.is_active) || policies[0];
+      if (activePolicy) {
+        setIdleThreshold(activePolicy.idle_threshold_minutes);
+        setPolicy(activePolicy);
+      }
+    } catch (err) {
+      console.error('Failed to fetch idle threshold', err);
+    }
+  }, []);
+
+  const checkUserStatus = useCallback(async () => {
+    const token = localStorage.getItem('access_token');
+    if (token) {
+      try {
+        const decoded = jwtDecode(token);
+        if (decoded.exp * 1000 < Date.now()) {
+          logout();
+        } else {
+          const res = await api.get('/auth/me/');
+          setUser(res.data);
+          fetchInitialStatuses(res.data.role);
+          connectWebSocket(res.data);
+        }
+      } catch (error) {
+        logout();
+      }
+    }
+    setLoading(false);
+  }, [logout, fetchInitialStatuses, connectWebSocket]);
+
+  const login = useCallback(async (email, password, otp) => {
+    try {
+      const res = await api.post('/auth/login/', { email, password, otp });
+      localStorage.setItem('access_token', res.data.access);
+      localStorage.setItem('refresh_token', res.data.refresh);
+      setUser(res.data.user);
+      
+      const role = res.data.user.role;
+      toast.success('Login Successful');
+      fetchInitialStatuses(role);
+      connectWebSocket(res.data.user);
+      return role; 
+    } catch (error) {
+      const msg = error.response?.data?.detail || 'Invalid credentials';
+      toast.error(msg);
+      throw error;
+    }
+  }, [fetchInitialStatuses, connectWebSocket]);
+
+  useEffect(() => {
+    checkUserStatus();
+    return () => disconnectWebSocket();
+  }, [checkUserStatus, disconnectWebSocket]);
+
+  // Periodic check for absolute session timeout based on policy
+  useEffect(() => {
+    if (!user || !policy?.session_timeout_hours) return;
+
+    const checkTimeout = () => {
+      const token = localStorage.getItem('access_token');
+      if (!token) return;
+      
+      try {
+        const decoded = jwtDecode(token);
+        const issuedAt = decoded.iat * 1000; // to ms
+        const ageHours = (Date.now() - issuedAt) / (1000 * 60 * 60);
+
+        if (ageHours >= policy.session_timeout_hours) {
+          console.warn('Session timeout reached according to policy');
+          toast.error(`Your ${policy.session_timeout_hours}-hour session has expired.`);
+          logout();
+        }
+      } catch (err) {
+        console.error('Timeout check failed', err);
+      }
+    };
+
+    const interval = setInterval(checkTimeout, 60000); 
+    return () => clearInterval(interval);
+  }, [user, policy, logout]);
 
   const value = {
     user,

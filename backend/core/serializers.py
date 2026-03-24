@@ -125,9 +125,9 @@ class AttendancePolicySerializer(serializers.ModelSerializer):
     class Meta:
         model = AttendancePolicy
         fields = [
-            'id', 'name', 'min_working_hours', 'half_day_hours',
+            'id', 'name', 'min_working_hours', 'present_hours', 'half_day_hours',
             'idle_threshold_minutes', 'shift_start_time', 'shift_end_time',
-            'is_active', 'department', 'created_at', 'updated_at',
+            'session_timeout_hours', 'is_active', 'department', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -208,8 +208,8 @@ class AttendanceSerializer(serializers.ModelSerializer):
         return max(0, work - breaks - idle)
 
     def get_work_hours(self, obj):
-        effective = self.get_effective_work_seconds(obj)
-        return round(effective / 3600, 2)
+        total = self.get_total_work_seconds(obj)
+        return round(total / 3600, 2)
 
     def get_live_status(self, obj):
         sessions = list(obj.work_sessions.all())

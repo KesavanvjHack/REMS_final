@@ -3,7 +3,8 @@ import api from '../../api/axios';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 import { UserGroupIcon, ArrowPathIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { formatDuration, formatLastLogout, formatDecimalHours } from '../../utils/format';
+import { formatLastLogout, formatDecimalHours } from '../../utils/format';
+import LiveDuration from '../../components/LiveDuration';
 import { AuthContext } from '../../context/AuthContext';
 
 const STATUS_COLORS = {
@@ -304,9 +305,30 @@ const TeamAttendance = () => {
                       {displayStatus?.replace('_', ' ')}
                     </span>
                   </td>
-                  <td className="px-3 py-4 text-right text-emerald-400 font-mono text-[11px] whitespace-nowrap">{formatDuration(record.effective_work_seconds)}</td>
-                  <td className="px-3 py-4 text-right text-cyan-400 font-mono text-[11px] whitespace-nowrap">{formatDuration(record.total_break_seconds)}</td>
-                  <td className="px-3 py-4 text-right text-amber-400 font-mono text-[11px] whitespace-nowrap">{formatDuration(record.total_idle_seconds)}</td>
+                  <td className="px-3 py-4 text-right text-emerald-400 font-mono text-[11px] whitespace-nowrap">
+                    <LiveDuration
+                      initialSeconds={record.effective_work_seconds}
+                      status={record.live_status}
+                      type="work"
+                      isToday={record.date === todayStr}
+                    />
+                  </td>
+                  <td className="px-3 py-4 text-right text-cyan-400 font-mono text-[11px] whitespace-nowrap">
+                    <LiveDuration
+                      initialSeconds={record.total_break_seconds}
+                      status={record.live_status}
+                      type="break"
+                      isToday={record.date === todayStr}
+                    />
+                  </td>
+                  <td className="px-3 py-4 text-right text-amber-400 font-mono text-[11px] whitespace-nowrap">
+                    <LiveDuration
+                      initialSeconds={record.total_idle_seconds}
+                      status={record.live_status}
+                      type="idle"
+                      isToday={record.date === todayStr}
+                    />
+                  </td>
                   <td className="px-3 py-4 text-center">
                     {record.is_flagged ? (
                       <span className="text-rose-400 font-bold text-[10px] bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>

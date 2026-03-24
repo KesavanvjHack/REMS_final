@@ -189,6 +189,9 @@ class LoginView(APIView):
         # Audit log
         AuditService.log(user, 'login', f'User {user.email} logged in with 2FA', request)
 
+        # Notify managers/admins of employee login
+        NotificationService.notify_based_on_role(user, "User Login", f"{user.full_name} has logged in.", "system")
+
         return Response({
             'access': str(refresh.access_token),
             'refresh': str(refresh),
@@ -214,6 +217,10 @@ class LogoutView(APIView):
             if refresh_token:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
+            
+            # Notify managers/admins of employee logout
+            NotificationService.notify_based_on_role(request.user, "User Logout", f"{request.user.full_name} has logged out.", "system")
+            
             AuditService.log(request.user, 'logout', f'User {request.user.email} logged out', request)
             return Response({'detail': 'Logged out successfully.'})
         except TokenError:
@@ -899,12 +906,66 @@ class AttendancePolicyViewSet(viewsets.ModelViewSet):
         return [IsAdmin()]
 
     def perform_update(self, serializer):
+        # Capture old values for comparison
+        old_instance = self.get_object()
+        old_name = old_instance.name
+        old_idle = old_instance.idle_threshold_minutes
+        old_full = old_instance.min_working_hours
+        old_present = old_instance.present_hours
+        old_half = old_instance.half_day_hours
+        old_start = old_instance.shift_start_time
+        old_end = old_instance.shift_end_time
+        old_timeout = old_instance.session_timeout_hours
+
         instance = serializer.save()
+
+        # Build list of specific changes
+        changes = []
+        if old_name != instance.name:
+            changes.append(f"name to {instance.name}")
+        if old_idle != instance.idle_threshold_minutes:
+            changes.append(f"Idle Threshold to {instance.idle_threshold_minutes}m")
+        if old_full != instance.min_working_hours:
+            changes.append(f"Full-Day Hours to {instance.min_working_hours}h")
+        if old_present != instance.present_hours:
+            changes.append(f"Present Hours to {instance.present_hours}h")
+        if old_half != instance.half_day_hours:
+            changes.append(f"Half-Day Hours to {instance.half_day_hours}h")
+        if old_start != instance.shift_start_time:
+            changes.append(f"Shift Start to {instance.shift_start_time}")
+        if old_end != instance.shift_end_time:
+            changes.append(f"Shift End to {instance.shift_end_time}")
+        if old_timeout != instance.session_timeout_hours:
+            changes.append(f"Session Timeout to {instance.session_timeout_hours}h")
+
+        msg_detail = f"Changed {', '.join(changes)}" if changes else "Updated settings"
+
         AuditService.log(
             self.request.user, 'policy_change',
-            f'Policy "{instance.name}" updated: min_hours={instance.min_working_hours}, idle_threshold={instance.idle_threshold_minutes}min',
+            f'Policy "{instance.name}" updated: {msg_detail}',
             self.request
         )
+        NotificationService.notify_all_active_users(
+            self.request.user,
+            "Policy Modified",
+            f"The Attendance Policy was modified: {msg_detail}.",
+            "system"
+        )
+
+        # Trigger background recalculation for recent attendance records to reflect new policy
+        try:
+            from datetime import date, timedelta
+            from .models import Attendance
+            from .services import AttendanceService
+            
+            # Recalculate for the last 3 days to ensure consistency
+            recent_dates = [date.today() - timedelta(days=i) for i in range(3)]
+            target_attendances = Attendance.objects.filter(date__in=recent_dates)
+            for att in target_attendances:
+                AttendanceService.recalculate_status(att)
+        except Exception as e:
+            # Don't fail the update if recalculation fails
+            pass
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

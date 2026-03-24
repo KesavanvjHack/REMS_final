@@ -163,6 +163,20 @@ const PolicyConfig = () => {
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Present Hours</label>
+              <input
+                type="number"
+                required
+                step="0.5"
+                min="0"
+                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+                value={policy.present_hours}
+                onChange={(e) => setPolicy({ ...policy, present_hours: parseFloat(e.target.value) })}
+                title="Minimum hours to mark attendance as Present"
+              />
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">Minimum Half-Day Hours</label>
               <input
                 type="number"
@@ -189,6 +203,21 @@ const PolicyConfig = () => {
                 value={policy.shift_end_time || '17:30'} 
                 onChange={(val) => setPolicy({...policy, shift_end_time: val})}
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">Session Timeout (Hours)</label>
+              <input
+                type="number"
+                required
+                step="0.5"
+                min="0.5"
+                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
+                value={policy.session_timeout_hours || 24}
+                onChange={(e) => setPolicy({ ...policy, session_timeout_hours: parseFloat(e.target.value) })}
+                title="Absolute maximum hours a login session can last before auto-logout"
+              />
+              <p className="mt-2 text-xs text-slate-500">Users will be automatically logged out after {policy.session_timeout_hours || 24} hours of continuous session.</p>
             </div>
           </div>
 

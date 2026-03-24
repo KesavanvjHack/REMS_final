@@ -26,8 +26,6 @@
   }
 }
 
-}
-
 @layer components {
   .page-fade-in {
     animation: fadeInSlideUp 0.5s ease-out forwards;
