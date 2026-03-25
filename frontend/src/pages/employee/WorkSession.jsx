@@ -18,7 +18,7 @@ const WorkSession = () => {
   const [loading, setLoading] = useState(true);
   const [breakType, setBreakType] = useState('lunch');
   const [breakTimeLeft, setBreakTimeLeft] = useState(0);
-  const [activeWorkSeconds, setActiveWorkSeconds] = useState(0);
+  const [activeTicks, setActiveTicks] = useState(0); // ticks at 0.1s for smooth live counter
   const [attendance, setAttendance] = useState(null);
   const [hasCheckedOutToday, setHasCheckedOutToday] = useState(false);
 
@@ -43,12 +43,12 @@ const WorkSession = () => {
       fetchStatus();
     }, 60000);
 
-    // Timer countdown loop
+    // Fast 0.1s tick for smooth live counter
     const countdownId = setInterval(() => {
       setStatus(currentStatus => {
-        // Increment work timer if working
-        if (currentStatus === 'working') {
-          setActiveWorkSeconds(prev => prev + 1);
+        // Increment work ticks if working or idle (total work = all time clocked in)
+        if (currentStatus === 'working' || currentStatus === 'idle') {
+          setActiveTicks(prev => prev + 1);
 
           // Auto-Checkout Logic: If working and passed shift end time
           if (policy?.shift_end_time && !loading) {
@@ -73,13 +73,13 @@ const WorkSession = () => {
         const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
         setBreakTimeLeft(remaining);
       }
-    }, 1000);
+    }, 100); // 0.1 second ticks
 
     return () => {
        clearInterval(intervalId);
        clearInterval(countdownId);
     };
-  }, [policy]); // Only restart intervals when policy changes, not on loading toggle
+  }, [policy]);
 
   // Auto-resume work when break time expires
   useEffect(() => {
@@ -107,41 +107,11 @@ const WorkSession = () => {
 
 
       
-      // Sync the real active time from the server session if available
-      if (res.data.session && ['working', 'on_break', 'idle'].includes(res.data.status)) {
-        const sessionStart = new Date(res.data.session.start_time).getTime();
-        const now = new Date().getTime();
-        
-        let breakSeconds = 0;
-        let idleSeconds = 0;
-        
-        if (res.data.attendance) {
-           breakSeconds = res.data.attendance.total_break_seconds || 0;
-           idleSeconds = res.data.attendance.total_idle_seconds || 0;
-        }
-
-        if (res.data.status === 'on_break' && res.data.session.break_sessions) {
-            const activeBreak = res.data.session.break_sessions.find(b => !b.end_time);
-            if (activeBreak) {
-                const breakStart = new Date(activeBreak.start_time).getTime();
-                breakSeconds += Math.floor((now - breakStart) / 1000);
-            }
-        }
-
-        if (res.data.status === 'idle' && res.data.session.idle_logs) {
-            const activeIdle = res.data.session.idle_logs.find(i => !i.end_time);
-            if (activeIdle) {
-                const idleStart = new Date(activeIdle.start_time).getTime();
-                idleSeconds += Math.floor((now - idleStart) / 1000);
-            }
-        }
-
-        const totalElapsedSecs = Math.floor((now - sessionStart) / 1000);
-        const effectiveSecs = Math.max(0, totalElapsedSecs - breakSeconds - idleSeconds);
-        
-        setActiveWorkSeconds(effectiveSecs);
+      // Sync the total work seconds from the server (total time since first clock-in)
+      if (res.data.attendance) {
+        setActiveTicks((res.data.attendance.total_work_seconds || 0) * 10);
       } else if (res.data.status === 'offline') {
-        setActiveWorkSeconds(0);
+        setActiveTicks(0);
       }
     } catch (err) {
       toast.error('Failed to fetch real-time status');
@@ -257,13 +227,13 @@ const WorkSession = () => {
             </span>
           </div>
           
-          {(status === 'working' || activeWorkSeconds > 0) && (
+          {(status === 'working' || activeTicks > 0) && (
             <div className="flex flex-col items-center mt-2 bg-slate-900/50 px-8 py-4 rounded-2xl border border-slate-700">
-              <span className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">Active Work Time</span>
+              <span className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">Total Work Time</span>
               <span className="text-4xl font-mono font-black text-emerald-400 tracking-tight drop-shadow-[0_0_10px_rgba(16,185,129,0.3)]">
-                {Math.floor(activeWorkSeconds / 3600).toString().padStart(2, '0')}:
-                {Math.floor((activeWorkSeconds % 3600) / 60).toString().padStart(2, '0')}:
-                {(activeWorkSeconds % 60).toString().padStart(2, '0')}
+                {Math.floor(Math.floor(activeTicks / 10) / 3600).toString().padStart(2, '0')}:
+                {Math.floor((Math.floor(activeTicks / 10) % 3600) / 60).toString().padStart(2, '0')}:
+                {(Math.floor(activeTicks / 10) % 60).toString().padStart(2, '0')}
               </span>
             </div>
           )}

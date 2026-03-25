@@ -715,7 +715,7 @@ class ReportService:
                 'work_hours': round(work_s / 3600, 2),
                 'idle_hours': round(idle_s / 3600, 2),
                 'break_hours': round(break_s / 3600, 2),
-                'productive_hours': round(max(0, work_s - idle_s - break_s) / 3600, 2),
+                'productive_hours': round(work_s / 3600, 2),
                 'productivity_score': daily_score,
                 'present': day_qs.filter(status='present').count(),
                 'absent': day_qs.filter(status='absent').count(),
@@ -775,11 +775,8 @@ class ProductivityScoringService:
         idle_sec = attendance.total_idle_seconds
         break_sec = attendance.total_break_seconds
         
-        # Effective productive seconds
-        productive_sec = max(0, work_sec - idle_sec - break_sec)
-        
-        # Base proportion of minimum hours
-        score = (productive_sec / min_hours) * 100 if min_hours > 0 else 0
+        # Base proportion of minimum hours (using total work hours as requested)
+        score = (work_sec / min_hours) * 100 if min_hours > 0 else 0
 
         # Penalties: High idle/breaks
         if attendance.is_flagged:

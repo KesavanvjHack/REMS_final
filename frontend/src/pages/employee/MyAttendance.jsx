@@ -85,7 +85,7 @@ const MyAttendance = () => {
           id: `absent-${day.getTime()}`,
           date: format(day, 'yyyy-MM-dd'),
           status: 'absent',
-          effective_work_seconds: 0,
+          total_work_seconds: 0,
           total_break_seconds: 0,
           total_idle_seconds: 0,
           is_flagged: false,
@@ -106,7 +106,7 @@ const MyAttendance = () => {
       ...rawData.map(rec => [
          format(new Date(rec.date), 'yyyy-MM-dd'),
          rec.status,
-         formatDecimalHours(rec.effective_work_seconds),
+         formatDecimalHours(rec.total_work_seconds),
          formatDecimalHours(rec.total_break_seconds),
          formatDecimalHours(rec.total_idle_seconds),
          rec.is_flagged ? `Flagged: ${rec.flag_reason}` : (rec.manager_remark || 'None')
@@ -161,7 +161,7 @@ const MyAttendance = () => {
       id: `placeholder-${day.getTime()}`,
       date: format(day, 'yyyy-MM-dd'),
       status: holiday ? 'holiday' : 'absent',
-      effective_work_seconds: 0,
+      total_work_seconds: 0,
       total_break_seconds: 0,
       total_idle_seconds: 0,
       is_flagged: false,
@@ -273,7 +273,7 @@ const MyAttendance = () => {
                   </td>
                   <td className="px-6 py-4 text-center font-mono text-emerald-400">
                     <LiveDuration
-                      initialSeconds={record.effective_work_seconds}
+                      initialSeconds={record.total_work_seconds}
                       status={record.live_status}
                       type="work"
                       isToday={record.date === todayStr}

@@ -110,7 +110,7 @@ const EmployeeDashboard = () => {
                 itemStyle={{ color: '#e2e8f0' }}
               />
               <Legend />
-              <Bar yAxisId="left" dataKey="productive_hours" name="Productive (h)" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Bar yAxisId="left" dataKey="productive_hours" name="Total Work (h)" fill="#10b981" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="left" dataKey="break_hours" name="Break (h)" fill="#6366f1" radius={[4, 4, 0, 0]} />
               <Bar yAxisId="right" dataKey="idle_hours" name="Idle (h)" fill="#f59e0b" radius={[4, 4, 0, 0]} />
             </BarChart>

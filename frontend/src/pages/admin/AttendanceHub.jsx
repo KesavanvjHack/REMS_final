@@ -69,7 +69,7 @@ const AttendanceHub = () => {
         status: 'Absent',
         live_status: 'Offline',
         last_logout: '--:--',
-        effective_work_seconds: 0,
+        total_work_seconds: 0,
         total_break_seconds: 0,
         total_idle_seconds: 0,
         is_flagged: false,
@@ -119,7 +119,7 @@ const AttendanceHub = () => {
       formatLastLogout(record.first_login),
       formatLastLogout(record.last_logout),
       record.status,
-      formatDecimalHours(record.effective_work_seconds),
+      formatDecimalHours(record.total_work_seconds),
       formatDecimalHours(record.total_break_seconds),
       formatDecimalHours(record.total_idle_seconds),
       record.is_flagged ? `Yes - ${record.flag_reason}` : 'No',
@@ -373,7 +373,7 @@ const AttendanceHub = () => {
                   </td>
                   <td className="px-3 py-4 text-emerald-400 font-mono text-[11px] whitespace-nowrap">
                     <LiveDuration
-                      initialSeconds={record.effective_work_seconds}
+                      initialSeconds={record.total_work_seconds}
                       status={record.live_status}
                       type="work"
                       isToday={record.date === todayStr}

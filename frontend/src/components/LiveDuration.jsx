@@ -11,9 +11,10 @@ const LiveDuration = ({ initialSeconds, status, type, isToday, className = '' })
     if (!isToday) return;
 
     let isActive = false;
-    if (type === 'work' && status === 'Working') isActive = true;
-    if (type === 'break' && status === 'On Break') isActive = true;
-    if (type === 'idle' && status === 'Idle') isActive = true;
+    const s = status?.toLowerCase();
+    if (type === 'work' && s === 'working') isActive = true;
+    if (type === 'break' && s === 'on_break') isActive = true;
+    if (type === 'idle' && s === 'idle') isActive = true;
 
     if (!isActive) return;
 

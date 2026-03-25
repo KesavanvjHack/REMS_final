@@ -119,7 +119,7 @@ const TeamAttendance = () => {
          formatLastLogout(rec.first_login),
          formatLastLogout(rec.last_logout),
          rec.status,
-         formatDecimalHours(rec.effective_work_seconds),
+         formatDecimalHours(rec.total_work_seconds),
          formatDecimalHours(rec.total_break_seconds),
          formatDecimalHours(rec.total_idle_seconds),
          rec.is_flagged ? `Yes - ${rec.flag_reason}` : 'No',
@@ -158,7 +158,7 @@ const TeamAttendance = () => {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">Team Timesheet</h1>
             <p className="text-xs text-slate-500 mt-0.5">
-              Showing your direct reports • Live status • Refreshes every 30s
+              Showing your direct reports • Live status • Updated every 0.1s
             </p>
           </div>
         </div>
@@ -307,7 +307,7 @@ const TeamAttendance = () => {
                   </td>
                   <td className="px-3 py-4 text-right text-emerald-400 font-mono text-[11px] whitespace-nowrap">
                     <LiveDuration
-                      initialSeconds={record.effective_work_seconds}
+                      initialSeconds={record.total_work_seconds}
                       status={record.live_status}
                       type="work"
                       isToday={record.date === todayStr}
