@@ -92,6 +92,21 @@ class NotificationService:
         recipients = User.objects.filter(is_active=True).exclude(id=sender.id).distinct()
         NotificationService._send_notifications(sender, recipients, title, message, notif_type)
 
+    @staticmethod
+    def notify_shift_event(user, title, message, notif_type='status'):
+        """
+        Notify Employee, their Manager, and all Admins about a shift-related event.
+        """
+        from .models import User
+        recipients = User.objects.filter(
+            Q(id=user.id) |  # Employee
+            Q(id=user.manager_id) |  # Manager
+            Q(role='admin')  # Admins
+        ).distinct()
+        
+        # If no sender is provided, use the user themselves as the logical 'source' of the event
+        NotificationService._send_notifications(user, recipients, title, message, notif_type)
+
 # ── Attendance Engine ──────────────────────────────────────────────────────────
 
 class AttendanceService:
@@ -219,6 +234,81 @@ class AttendanceService:
         ])
         return attendance
 
+    @staticmethod
+    @transaction.atomic
+    def auto_checkout_all_active_sessions():
+        """
+        Find all open work sessions for today that have passed the shift end time.
+        Close them and notify all roles.
+        """
+        from .models import WorkSession, AttendancePolicy
+        import datetime
+        
+        policy = AttendancePolicy.objects.filter(is_active=True).first()
+        if not policy:
+            return 0
+            
+        now_local = timezone.localtime(timezone.now())
+        today = now_local.date()
+        
+        # Combine date and time for comparison
+        shift_end_dt = timezone.make_aware(datetime.datetime.combine(today, policy.shift_end_time))
+        
+        if now_local < shift_end_dt:
+            return 0 # Shift hasn't ended yet
+            
+        open_sessions = WorkSession.objects.filter(
+            end_time__isnull=True,
+            attendance__date=today
+        ).select_related('attendance__user')
+        
+        count = 0
+        for session in open_sessions:
+            # Close session at exactly shift_end_time if it started before that
+            close_time = shift_end_dt
+            WorkSessionService.stop_session(session.attendance.user, end_time=close_time, is_auto=True)
+            count += 1
+            
+        return count
+
+    @staticmethod
+    def notify_upcoming_shifts():
+        """
+        Notify employees 5 minutes before their shift starts.
+        """
+        from .models import User, AttendancePolicy, Notification
+        import datetime
+        
+        now_local = timezone.localtime(timezone.now())
+        today = now_local.date()
+        
+        # We check for shifts starting roughly 5 minutes from now
+        # In a real system, we'd use a buffer (e.g. 1 min window)
+        target_time = (now_local + datetime.timedelta(minutes=5)).time()
+        target_time_str = target_time.strftime("%H:%M")
+        
+        # Find policies where shift_start_time is close to target_time
+        # Simplified: check for exact minute match for this demonstration
+        policies = AttendancePolicy.objects.filter(is_active=True)
+        
+        notified_count = 0
+        for policy in policies:
+            if policy.shift_start_time.strftime("%H:%M") == target_time_str:
+                # Notify all employees under this policy
+                users = User.objects.filter(is_active=True, role='employee')
+                if policy.department:
+                    users = users.filter(department=policy.department)
+                
+                for user in users:
+                    NotificationService._send_notifications(
+                        user, [user],
+                        "Shift Starting Soon",
+                        f"Reminder: Your shift starts in 5 minutes at {policy.shift_start_time.strftime('%I:%M %p')}.",
+                        "system"
+                    )
+                    notified_count += 1
+        return notified_count
+
 
 # ── Work Session Service ───────────────────────────────────────────────────────
 
@@ -268,14 +358,14 @@ class WorkSessionService:
         AuditService.log(user, 'create', 'Work session started', request)
         StatusService.broadcast_status_change(user)
         time_str = timezone.localtime(timezone.now()).strftime("%I:%M %p")
-        NotificationService.notify_based_on_role(
-            user, "Shift Started", f"{user.full_name} started their shift at {time_str}.", "status"
+        NotificationService.notify_shift_event(
+            user, "Shift Started", f"{user.full_name} started their shift at {time_str}."
         )
         return session, True
 
     @staticmethod
     @transaction.atomic
-    def stop_session(user):
+    def stop_session(user, end_time=None, is_auto=False):
         """Stop the active work session and recalculate status."""
         from .models import WorkSession, Attendance
 
@@ -291,26 +381,44 @@ class WorkSessionService:
         if not open_session:
             return None, False
 
+        # Capping Logic: If not admin, cap end_time to shift_end_time if it has passed
+        stop_time = end_time if end_time else timezone.now()
+        
+        if user.role != 'admin':
+            from .models import AttendancePolicy
+            import datetime
+            policy = AttendancePolicy.objects.filter(is_active=True).first()
+            if policy:
+                now_local = timezone.localtime(stop_time)
+                shift_end_dt = timezone.make_aware(datetime.datetime.combine(now_local.date(), policy.shift_end_time))
+                if now_local > shift_end_dt:
+                    stop_time = shift_end_dt
+                    is_auto = True # Mark as auto if we capped it
+
         # Also close any open break
         open_break = open_session.break_sessions.filter(end_time__isnull=True).first()
         if open_break:
-            open_break.end_time = timezone.now()
+            open_break.end_time = stop_time
             open_break.save(update_fields=['end_time', 'updated_at'])
 
         # Close any open idle log
         open_idle = open_session.idle_logs.filter(end_time__isnull=True).first()
         if open_idle:
-            open_idle.end_time = timezone.now()
+            open_idle.end_time = stop_time
             open_idle.save(update_fields=['end_time', 'updated_at'])
 
-        open_session.end_time = timezone.now()
+        open_session.end_time = stop_time
         open_session.save(update_fields=['end_time', 'updated_at'])
 
         AttendanceService.recalculate_status(attendance)
         StatusService.broadcast_status_change(user)
-        time_str = timezone.localtime(timezone.now()).strftime("%I:%M %p")
-        NotificationService.notify_based_on_role(
-            user, "Shift Ended", f"{user.full_name} clocked out at {time_str}.", "status"
+        
+        time_str = timezone.localtime(stop_time).strftime("%I:%M %p")
+        msg_suffix = " (Auto-Checkout)" if is_auto else ""
+        NotificationService.notify_shift_event(
+            user, 
+            "Shift Ended" + msg_suffix, 
+            f"{user.full_name} clocked out at {time_str}{msg_suffix}."
         )
         return open_session, True
 
@@ -419,17 +527,10 @@ class IdleService:
             work_session=open_session,
             start_time=timezone.now(),
         )
-        StatusService.broadcast_status_change(user)
-        # Notify managers & admins
-        NotificationService.notify_managers_and_admins(
-            user, "Employee Idle", f"{user.full_name} has been idle for 15+ minutes.", "system"
-        )
-        # Also notify the employee themselves
-        NotificationService._send_notifications(
-            user, [user],
-            "You're Idle",
-            "You've been inactive for 15 minutes. Your status is now marked as idle.",
-            "system"
+        time_str = timezone.localtime(timezone.now()).strftime("%I:%M %p")
+        # Notify Employee, Manager, and Admin
+        NotificationService.notify_shift_event(
+            user, "Idle Detected", f"{user.full_name} has been idle for 15+ minutes.", "system"
         )
         return idle_log, True
 
@@ -456,16 +557,10 @@ class IdleService:
         open_idle.save(update_fields=['end_time', 'updated_at'])
         AttendanceService.recalculate_status(attendance)
         StatusService.broadcast_status_change(user)
-        # Notify managers & admins
-        NotificationService.notify_managers_and_admins(
-            user, "Employee Active", f"{user.full_name} is active again.", "system"
-        )
-        # Also notify the employee themselves
-        NotificationService._send_notifications(
-            user, [user],
-            "You're Active",
-            "Welcome back! Your idle period has been recorded.",
-            "system"
+        
+        # Notify Employee, Manager and Admin
+        NotificationService.notify_shift_event(
+            user, "Activity Resumed", f"{user.full_name} is active again.", "system"
         )
         return open_idle, True
 

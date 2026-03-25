@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import api from '../../api/axios';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay } from 'date-fns';
-import { QueueListIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { QueueListIcon, ArrowDownTrayIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { formatDecimalHours } from '../../utils/format';
 import LiveDuration from '../../components/LiveDuration';
@@ -11,6 +11,7 @@ const MyAttendance = () => {
   const [attendance, setAttendance] = useState([]);
   const [holidays, setHolidays] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
   const { policy } = useContext(AuthContext);
   
   // Date filter state for export
@@ -22,10 +23,10 @@ const MyAttendance = () => {
     fetchAttendance();
     fetchHolidays();
 
-    // Very fast polling every 2 seconds for real-time updates
+    // Auto-refresh every 1 minute as requested
     const intervalId = setInterval(() => {
-      fetchAttendance();
-    }, 2000);
+      fetchAttendance(true); // silent refresh
+    }, 60000);
 
     return () => clearInterval(intervalId);
   }, []);
@@ -39,14 +40,16 @@ const MyAttendance = () => {
     }
   };
 
-  const fetchAttendance = async () => {
+  const fetchAttendance = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get('/attendance/');
       setAttendance(res.data.results || res.data);
+      setLastUpdated(new Date());
     } catch (error) {
       // Suppress repeated toast if polling fails
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -179,10 +182,27 @@ const MyAttendance = () => {
             <QueueListIcon className="h-6 w-6 text-indigo-400" />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-white">This Week's Attendance</h1>
+          {lastUpdated && (
+            <span className="text-[10px] text-slate-500 font-mono mt-1 block">
+              Last synced: {lastUpdated.toLocaleTimeString()}
+            </span>
+          )}
         </div>
 
-        {/* Export Controls */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => fetchAttendance()}
+            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg border border-slate-700 transition-all flex items-center gap-2"
+            title="Manual Refresh"
+          >
+            <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <span className="text-xs font-medium hidden sm:inline">Refresh</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Export Controls */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
           <div className="flex gap-2">
             <select 
               value={exportType}
@@ -219,7 +239,6 @@ const MyAttendance = () => {
             Export CSV
           </button>
         </div>
-      </div>
 
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">

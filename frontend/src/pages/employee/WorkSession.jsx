@@ -273,7 +273,8 @@ const WorkSession = () => {
                 <select 
                   value={breakType}
                   onChange={(e) => setBreakType(e.target.value)}
-                  className="w-full bg-slate-900/80 border border-slate-700 rounded-2xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 uppercase tracking-widest text-sm font-semibold"
+                  disabled={loading || (user?.role !== 'admin' && isOutsideShift)}
+                  className="w-full bg-slate-900/80 border border-slate-700 rounded-2xl px-4 py-3 text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 uppercase tracking-widest text-sm font-semibold disabled:opacity-50"
                 >
                   <option value="lunch">Lunch Break (60m)</option>
                   <option value="tea">Tea Break (15m)</option>
@@ -281,7 +282,7 @@ const WorkSession = () => {
                 </select>
                 <button
                   onClick={handleBreakStart}
-                  disabled={loading}
+                  disabled={loading || (user?.role !== 'admin' && isOutsideShift)}
                   className="flex items-center justify-center gap-3 bg-cyan-600 hover:bg-cyan-500 text-white py-4 px-6 rounded-2xl font-semibold tracking-wide shadow-[0_0_20px_rgba(6,182,212,0.3)] transition-all disabled:opacity-50"
                 >
                   <PauseIcon className="h-6 w-6" />
@@ -291,7 +292,7 @@ const WorkSession = () => {
               
               <button
                 onClick={() => handleAction('work', 'stop')}
-                disabled={loading}
+                disabled={loading || (user?.role !== 'admin' && isOutsideShift)}
                 className="flex items-center justify-center gap-3 bg-rose-600 hover:bg-rose-500 text-white py-4 px-6 rounded-2xl font-semibold tracking-wide shadow-[0_0_20px_rgba(225,29,72,0.3)] transition-all disabled:opacity-50 sm:col-span-2"
               >
                 <StopIcon className="h-6 w-6" />

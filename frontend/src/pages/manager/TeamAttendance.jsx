@@ -64,8 +64,8 @@ const TeamAttendance = () => {
   useEffect(() => {
     fetchTeamAttendance();
 
-    // Poll every 30 seconds for real-time feel
-    const interval = setInterval(() => fetchTeamAttendance(true), 30000);
+    // Auto-refresh every 1 minute as requested
+    const interval = setInterval(() => fetchTeamAttendance(true), 60000);
     return () => clearInterval(interval);
   }, [fetchTeamAttendance]);
 
@@ -146,10 +146,9 @@ const TeamAttendance = () => {
   );
 
   // Extract unique employees from attendance data
-  const uniqueEmployees = Array.from(new Set(attendance.map(a => a.user_name))).filter(Boolean).sort();
-
-  return (
+  const uniqueEmployees = Array.from(new Set(attendance.map(a => a.user_name))).filter(Boolean).sort();  return (
     <div className="space-y-6 page-fade-in">
+      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between xl:items-start gap-4 mb-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-indigo-500/20 rounded-lg">
@@ -157,104 +156,106 @@ const TeamAttendance = () => {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white">Team Timesheet</h1>
+            {lastUpdated && (
+              <span className="text-[10px] text-slate-500 font-mono mt-1 block">
+                Last synced: {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
             <p className="text-xs text-slate-500 mt-0.5">
               Showing your direct reports • Live status • Updated every 0.1s
             </p>
           </div>
         </div>
-        
-        <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4">
-          {/* Export Controls */}
-          <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
-            <div className="flex gap-2 flex-wrap">
-              <select
-                value={exportEmployee}
-                onChange={(e) => setExportEmployee(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="all">All Employees</option>
-                {uniqueEmployees.map(empName => (
-                  <option key={empName} value={empName}>{empName}</option>
-                ))}
-              </select>
 
-              <select 
-                value={exportType}
-                onChange={(e) => handleQuickSelect(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="custom">Custom Dates</option>
-                <option value="weekly">This Week</option>
-                <option value="monthly">This Month</option>
-              </select>
-            </div>
-            
-            <div className="flex items-center gap-2">
-              <input 
-                type="date" 
-                value={startDate}
-                onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
-              />
-              <span className="text-slate-500">to</span>
-              <input 
-                type="date" 
-                value={endDate}
-                onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
-              />
-            </div>
-
-            <button 
-              onClick={handleExport}
-              className="flex items-center gap-2 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
-            >
-              <ArrowDownTrayIcon className="h-4 w-4" />
-              Export CSV
-            </button>
-          </div>
-
-          <div className="flex items-center gap-3 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50 self-end xl:self-auto">
-            {lastUpdated && (
-              <span className="text-xs text-slate-500">
-                Updated {format(lastUpdated, 'hh:mm:ss a')}
-              </span>
-            )}
-            <button
-              onClick={() => fetchTeamAttendance()}
-              className="p-2 rounded-lg bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
-              title="Refresh"
-            >
-              <ArrowPathIcon className="h-4 w-4" />
-            </button>
-          </div>
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => fetchTeamAttendance()}
+            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg border border-slate-700 transition-all flex items-center gap-2"
+            title="Manual Refresh"
+          >
+            <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            <span className="text-xs font-medium hidden sm:inline">Refresh</span>
+          </button>
         </div>
       </div>
 
+      {/* Export Controls Section */}
+      <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4">
+        <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
+          <div className="flex gap-2 flex-wrap">
+            <select
+              value={exportEmployee}
+              onChange={(e) => setExportEmployee(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="all">All Employees</option>
+              {uniqueEmployees.map(empName => (
+                <option key={empName} value={empName}>{empName}</option>
+              ))}
+            </select>
+
+            <select 
+              value={exportType}
+              onChange={(e) => handleQuickSelect(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="custom">Custom Dates</option>
+              <option value="weekly">This Week</option>
+              <option value="monthly">This Month</option>
+            </select>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+            />
+            <span className="text-slate-500 text-xs">to</span>
+            <input 
+              type="date" 
+              value={endDate}
+              onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
+              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+            />
+          </div>
+
+          <button 
+            onClick={handleExport}
+            className="flex items-center gap-2 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4" />
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      {/* Table Section */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
               <tr>
-                <th className="px-3 py-4 font-semibold tracking-wider">Date</th>
-                <th className="px-3 py-4 font-semibold tracking-wider">Employee</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-center">Login Time</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-center hidden lg:table-cell">Last Logout</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-center">Attendance</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-right">Work (h)</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-right">Break (h)</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-right">Idle (h)</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-center">Anomalies</th>
-                <th className="px-3 py-4 font-semibold tracking-wider">Remarks / Reason</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-xs">Date</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-xs text-left">Employee</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center text-xs">Login Time</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center hidden lg:table-cell text-xs">Last Logout</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center text-xs">Attendance</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Work (h)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Break (h)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Idle (h)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center text-xs">Anomalies</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-xs text-left">Remarks / Reason</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i}>
-                    {[...Array(11)].map((_, j) => (
+                    {[...Array(10)].map((_, j) => (
                       <td key={j} className="px-3 py-4">
-                        <div className="h-4 w-full skeleton-pulse"></div>
+                        <div className="h-4 w-full skeleton-pulse bg-slate-700/50 rounded"></div>
                       </td>
                     ))}
                   </tr>
@@ -263,100 +264,100 @@ const TeamAttendance = () => {
                 attendance
                   .filter(record => new Date(record.date) <= new Date())
                   .map((record) => {
-                  const todayStr = new Date().toISOString().split('T')[0];
-                  const now = new Date();
-                  const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-                  const istDate = new Date(istString);
-                  const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
-                  const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
-                  const shiftEndMinutes = endHour * 60 + endMin;
-                  const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    const now = new Date();
+                    const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+                    const istDate = new Date(istString);
+                    const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+                    const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
+                    const shiftEndMinutes = endHour * 60 + endMin;
+                    const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
 
-                  const isCalculating = record.date === todayStr && 
-                                      isBeforeShiftEnd &&
-                                      record.status !== 'present' && 
-                                      record.status !== 'on_leave' && 
-                                      record.status !== 'holiday';
-                  const displayStatus = isCalculating ? 'calculating...' : record.status;
-                  
-                  return (
-                <tr key={record.id} className="hover:bg-slate-700/20 transition-colors">
-                  <td className="px-3 py-4 font-medium text-slate-200 text-xs">
-                    {format(new Date(record.date), 'MMM dd, yyyy')}
-                  </td>
-                  <td className="px-3 py-4">
-                    <div>
-                      <p className="font-semibold text-slate-200 text-xs">{record.user_name}</p>
-                      <p className="text-[10px] text-slate-500 truncate max-w-[100px]">{record.user_email}</p>
-                    </div>
-                  </td>
-                  <td className="px-3 py-4 text-center">
-                    <span className="text-slate-300 font-mono text-[10px] whitespace-nowrap">
-                      {formatLastLogout(record.first_login)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-4 text-center hidden lg:table-cell">
-                    <span className="text-slate-300 font-mono text-[10px] whitespace-nowrap">
-                      {formatLastLogout(record.last_logout)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-4 text-center">
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest ${isCalculating ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : (ATTENDANCE_COLORS[record.status] || 'bg-slate-500/10 text-slate-400')}`}>
-                      {displayStatus?.replace('_', ' ')}
-                    </span>
-                  </td>
-                  <td className="px-3 py-4 text-right text-emerald-400 font-mono text-[11px] whitespace-nowrap">
-                    <LiveDuration
-                      initialSeconds={record.total_work_seconds}
-                      status={record.live_status}
-                      type="work"
-                      isToday={record.date === todayStr}
-                    />
-                  </td>
-                  <td className="px-3 py-4 text-right text-cyan-400 font-mono text-[11px] whitespace-nowrap">
-                    <LiveDuration
-                      initialSeconds={record.total_break_seconds}
-                      status={record.live_status}
-                      type="break"
-                      isToday={record.date === todayStr}
-                    />
-                  </td>
-                  <td className="px-3 py-4 text-right text-amber-400 font-mono text-[11px] whitespace-nowrap">
-                    <LiveDuration
-                      initialSeconds={record.total_idle_seconds}
-                      status={record.live_status}
-                      type="idle"
-                      isToday={record.date === todayStr}
-                    />
-                  </td>
-                  <td className="px-3 py-4 text-center">
-                    {record.is_flagged ? (
-                      <span className="text-rose-400 font-bold text-[10px] bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>
-                        Flagged
-                      </span>
-                    ) : (
-                      <span className="text-slate-600">—</span>
-                    )}
-                  </td>
-                  <td className="px-3 py-4">
-                    {record.manager_remark ? (
-                      <div className="flex flex-col">
-                        <span className="text-indigo-400 text-[10px] font-medium italic underline underline-offset-4 decoration-indigo-500/30 uppercase tracking-wider">Note:</span>
-                        <p className="text-slate-300 text-[10px] mt-1 leading-relaxed truncate max-w-[150px]" title={record.manager_remark}>{record.manager_remark}</p>
-                      </div>
-                    ) : record.flag_reason ? (
-                      <p className="text-slate-400 text-[10px] italic leading-relaxed truncate max-w-[150px]" title={record.flag_reason}>{record.flag_reason}</p>
-                    ) : (
-                      <span className="text-slate-600 font-mono text-[10px]">-</span>
-                    )}
-                  </td>
-                </tr>
-              );
-            })
-          )}
-          {!loading && attendance.length === 0 && (
+                    const isCalculating = record.date === todayStr && 
+                                        isBeforeShiftEnd &&
+                                        record.status !== 'present' && 
+                                        record.status !== 'on_leave' && 
+                                        record.status !== 'holiday';
+                    const displayStatus = isCalculating ? 'calculating...' : record.status;
+                    
+                    return (
+                      <tr key={record.id} className="hover:bg-slate-700/20 transition-colors">
+                        <td className="px-3 py-4 font-medium text-slate-200 text-xs whitespace-nowrap">
+                          {format(new Date(record.date), 'MMM dd, yyyy')}
+                        </td>
+                        <td className="px-3 py-4">
+                          <div>
+                            <p className="font-semibold text-slate-200 text-xs">{record.user_name}</p>
+                            <p className="text-[10px] text-slate-500 truncate max-w-[100px]" title={record.user_email}>{record.user_email}</p>
+                          </div>
+                        </td>
+                        <td className="px-3 py-4 text-center">
+                          <span className="text-slate-300 font-mono text-[10px] whitespace-nowrap">
+                            {formatLastLogout(record.first_login)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-4 text-center hidden lg:table-cell">
+                          <span className="text-slate-300 font-mono text-[10px] whitespace-nowrap">
+                            {formatLastLogout(record.last_logout)}
+                          </span>
+                        </td>
+                        <td className="px-3 py-4 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest ${isCalculating ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : (ATTENDANCE_COLORS[record.status] || 'bg-slate-500/10 text-slate-400')}`}>
+                            {displayStatus?.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="px-3 py-4 text-right text-emerald-400 font-mono text-[11px] whitespace-nowrap">
+                          <LiveDuration
+                            initialSeconds={record.total_work_seconds}
+                            status={record.live_status}
+                            type="work"
+                            isToday={record.date === todayStr}
+                          />
+                        </td>
+                        <td className="px-3 py-4 text-right text-cyan-400 font-mono text-[11px] whitespace-nowrap">
+                          <LiveDuration
+                            initialSeconds={record.total_break_seconds}
+                            status={record.live_status}
+                            type="break"
+                            isToday={record.date === todayStr}
+                          />
+                        </td>
+                        <td className="px-3 py-4 text-right text-amber-400 font-mono text-[11px] whitespace-nowrap">
+                          <LiveDuration
+                            initialSeconds={record.total_idle_seconds}
+                            status={record.live_status}
+                            type="idle"
+                            isToday={record.date === todayStr}
+                          />
+                        </td>
+                        <td className="px-3 py-4 text-center">
+                          {record.is_flagged ? (
+                            <span className="text-rose-400 font-bold text-[10px] bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>
+                              Flagged
+                            </span>
+                          ) : (
+                            <span className="text-slate-600">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-4">
+                          {record.manager_remark ? (
+                            <div className="flex flex-col">
+                              <span className="text-indigo-400 text-[10px] font-medium italic underline underline-offset-4 decoration-indigo-500/30 uppercase tracking-wider">Note:</span>
+                              <p className="text-slate-300 text-[10px] mt-1 leading-relaxed truncate max-w-[150px]" title={record.manager_remark}>{record.manager_remark}</p>
+                            </div>
+                          ) : record.flag_reason ? (
+                            <p className="text-slate-400 text-[10px] italic leading-relaxed truncate max-w-[150px]" title={record.flag_reason}>{record.flag_reason}</p>
+                          ) : (
+                            <span className="text-slate-600 font-mono text-[10px]">-</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+              )}
+              {!loading && attendance.length === 0 && (
                 <tr>
-                  <td colSpan="8" className="px-6 py-10 text-center text-slate-500 italic">
+                  <td colSpan="10" className="px-6 py-10 text-center text-slate-500 italic font-medium">
                     No timesheet records found for your team.
                   </td>
                 </tr>

@@ -58,6 +58,9 @@ const useIdleDetection = (idleTimeMinutes = 15) => {
     // ONLY detect idle if user is working AND within work window
     if (status === 'working' && isWithinWorkWindow()) {
       idleTimeoutRef.current = setTimeout(handleIdleStart, idleTimeMinutes * 60 * 1000);
+    } else if (isIdleRef.current && !isWithinWorkWindow()) {
+      // If idle but shift ended, force stop idle
+      handleIdleStop();
     }
   }, [idleTimeMinutes, handleIdleStart, handleIdleStop, status, isWithinWorkWindow]);
 

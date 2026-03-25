@@ -1,6 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import api from '../../api/axios';
-import { ChartBarIcon, ClockIcon, BuildingOfficeIcon, UserGroupIcon, ExclamationTriangleIcon, FlagIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, ClockIcon, BuildingOfficeIcon, UserGroupIcon, ExclamationTriangleIcon, FlagIcon, ArrowDownTrayIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, parseISO } from 'date-fns';
 import { formatLastLogout, formatDecimalHours } from '../../utils/format';
@@ -11,6 +11,7 @@ const AttendanceHub = () => {
   const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
   const { policy } = useContext(AuthContext);
 
   // Filter states
@@ -23,10 +24,17 @@ const AttendanceHub = () => {
 
   useEffect(() => {
     fetchData();
+
+    // Auto-refresh every 1 minute as requested
+    const intervalId = setInterval(() => {
+      fetchData(true); // silent refresh
+    }, 60000);
+
+    return () => clearInterval(intervalId);
   }, [dateFilter, startDate, endDate]);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       let params = {};
       if (dateFilter === 'today') {
@@ -52,6 +60,8 @@ const AttendanceHub = () => {
       const allAtt = attRes.data.results || attRes.data;
       const allUsers = usersRes.data.results || usersRes.data;
       
+      setLastUpdated(new Date());
+
       const todayStr = new Date().toISOString().split('T')[0];
       const usersWithRecordToday = new Set(allAtt.filter(a => a.date === todayStr).map(a => a.user));
       
@@ -280,13 +290,31 @@ const AttendanceHub = () => {
       </div>
 
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
-        <div className="p-4 border-b border-slate-700/50 flex justify-between items-center bg-slate-800/80">
-          <h2 className="text-lg font-medium text-white flex items-center gap-2">
-            <ClockIcon className="h-5 w-5 text-indigo-400" />
-            Filtered Attendance
-          </h2>
-          <div className="text-xs font-mono text-slate-400 bg-slate-900 border border-slate-700 px-3 py-1 rounded-lg">
-            {dateFilter === 'custom' ? `${startDate} to ${endDate}` : dateFilter.replace('_', ' ').toUpperCase()}
+        <div className="p-4 border-b border-slate-700/50 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-slate-800/80 gap-4">
+          <div>
+            <h2 className="text-lg font-medium text-white flex items-center gap-2">
+              <ClockIcon className="h-5 w-5 text-indigo-400" />
+              Filtered Attendance
+            </h2>
+            {lastUpdated && (
+              <span className="text-[10px] text-slate-500 font-mono mt-1 block px-7">
+                Last synced: {lastUpdated.toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+          
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+            <button 
+              onClick={() => fetchData()}
+              className="p-2 bg-slate-900/50 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg border border-slate-700 transition-all flex items-center gap-2"
+              title="Manual Refresh"
+            >
+              <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <span className="text-xs font-medium">Refresh</span>
+            </button>
+            <div className="text-xs font-mono text-slate-400 bg-slate-900 border border-slate-700 px-3 py-1.5 rounded-lg whitespace-nowrap">
+              {dateFilter === 'custom' ? `${startDate} to ${endDate}` : dateFilter.replace('_', ' ').toUpperCase()}
+            </div>
           </div>
         </div>
         <div className="overflow-x-auto">
