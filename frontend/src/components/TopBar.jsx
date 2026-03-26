@@ -226,26 +226,30 @@ const LiveStatusPanel = ({ liveStatuses }) => {
 };
 
 const TopBar = () => {
-  const { user, logout, liveStatuses, status: currentStatus, setStatus: setCurrentStatus } = useContext(AuthContext);
-  const [notifications, setNotifications] = useState([]);
+  const { 
+    user, 
+    logout, 
+    liveStatuses, 
+    status: currentStatus, 
+    setStatus: setCurrentStatus,
+    notifications,
+    markAsRead,
+    markAllAsRead
+  } = useContext(AuthContext);
+  
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const wsRef = useRef(null);
 
   useEffect(() => {
     fetchStatus();
-    fetchNotifications();
-    const interval = setInterval(fetchStatus, 5000); // Polling every 5s
-
-    // Connect WebSocket if logged in
-    if (user) {
-      connectWebSocket();
-    }
-
+    
     // Set up ticking clock
     const clockInterval = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
+
+    // Initial polling
+    const interval = setInterval(fetchStatus, 5000);
 
     // Listen to manual triggers from WorkSession
     const handleStatusChange = (e) => {
@@ -261,127 +265,23 @@ const TopBar = () => {
       clearInterval(interval);
       clearInterval(clockInterval);
       window.removeEventListener('statusChange', handleStatusChange);
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
     };
   }, [user]);
 
-  const connectWebSocket = () => {
-    if (wsRef.current) return; // Prevent double connection
-
-    // Determine WS protocol based on window.location
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Ideally use env var for WS URL, falling back to localhost for dev
-    const wsUrl = `${protocol}//localhost:8000/ws/notifications/`;
-    
-    wsRef.current = new WebSocket(wsUrl);
-
-    wsRef.current.onopen = () => {
-      console.log('WebSocket Connected');
-    };
-
-    wsRef.current.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      if (data.type === 'notification' && data.recipient_id === user?.id) {
-        setNotifications((prev) => {
-          // De-duplicate: Ensure we don't add the same notification ID twice
-          if (prev.some(n => n.id === data.notification_id)) {
-            return prev;
-          }
-
-          const newNotif = {
-            id: data.notification_id,
-            title: data.title,
-            message: data.message,
-            type: data.notif_type,
-            sender_name: data.sender_name,
-            is_read: false,
-            created_at: new Date().toISOString()
-          };
-
-          // Trigger toast strictly on first receipt
-          // Using strict ID so react-hot-toast auto-deduplicates if re-rendered
-          toast.custom((t) => (
-            <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-slate-800 shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5`}>
-              <div className="flex-1 w-0 p-4">
-                <div className="flex items-start">
-                  <div className="ml-3 flex-1">
-                    <p className="text-sm font-medium text-slate-100">{data.title}</p>
-                    <p className="mt-1 text-sm text-slate-400">{data.message}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="flex border-l border-slate-700">
-                <button 
-                  onClick={() => toast.dismiss(t.id)}
-                  className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-indigo-400 hover:text-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          ), { duration: 4000, id: data.notification_id });
-
-          return [newNotif, ...prev];
-        });
-      }
-    };
-
-    wsRef.current.onclose = () => {
-      console.log('WebSocket Disconnected');
-    };
-  };
-
-  const fetchNotifications = async () => {
-    if (!user) return;
-    try {
-      // ONLY fetch unread notifications
-      const res = await api.get('/notifications/?is_read=false');
-      const raw = res.data.results || res.data;
-      
-      // Defensively de-duplicate the initial fetch payload just in case older duplicates exist in DB
-      const uniqueIds = new Set();
-      const cleanNotifs = raw.filter(n => {
-        if (!uniqueIds.has(n.id)) {
-          uniqueIds.add(n.id);
-          return true;
-        }
-        return false;
-      });
-      
-      setNotifications(cleanNotifs);
-    } catch (err) {
-      console.error('Failed to fetch notifications', err);
-    }
-  };
-
-  const handleMarkAsRead = async (id) => {
-    try {
-      await api.post(`/notifications/${id}/mark_read/`);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-    } catch (err) {
-      console.error(err);
+  const handleLogout = () => {
+    if (window.confirm('Are you sure you want to logout?')) {
+      logout();
     }
   };
 
   const handleMarkAllAsRead = async () => {
-    try {
-      await api.post('/notifications/mark_all_read/');
-      setNotifications([]);
-      setShowNotifications(false);
-      toast.success('All notifications cleared');
-    } catch (err) {
-      console.error(err);
-    }
+    await markAllAsRead();
+    setShowNotifications(false);
+    toast.success('All notifications cleared');
   };
 
-  const handleLogout = () => {
-    if (window.confirm('Are you sure you want to logout?')) {
-      if (wsRef.current) wsRef.current.close();
-      logout();
-    }
+  const handleMarkAsRead = async (id) => {
+    await markAsRead(id);
   };
 
   const fetchStatus = async () => {
@@ -458,7 +358,7 @@ const TopBar = () => {
                             <div className="flex justify-between items-start gap-2 mb-1">
                               <p className="text-sm font-medium text-slate-200 truncate">{notif.title}</p>
                               <p className="text-[10px] text-slate-500 whitespace-nowrap">
-                                {new Date(notif.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                {new Date(notif.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
                               </p>
                             </div>
                             <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{notif.message}</p>

@@ -63,32 +63,6 @@ class StatusConsumer(AsyncWebsocketConsumer):
         }))
 
     async def notification_alert(self, event):
-        """Ignore notifications on the status socket."""
-        pass
-
-class NotificationConsumer(AsyncWebsocketConsumer):
-    async def connect(self):
-        self.group_name = 'status_updates'
-        await self.channel_layer.group_add(
-            self.group_name,
-            self.channel_name
-        )
-        await self.accept()
-
-    async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(
-            self.group_name,
-            self.channel_name
-        )
-
-    async def receive(self, text_data):
-        pass
-
-    async def status_update(self, event):
-        """Ignore status updates on the notification socket."""
-        pass
-
-    async def notification_alert(self, event):
         """
         Broadcast a new notification to listeners.
         """
@@ -100,4 +74,12 @@ class NotificationConsumer(AsyncWebsocketConsumer):
             'message': event['message'],
             'notif_type': event['notif_type'],
             'sender_name': event['sender_name']
+        }))
+
+    async def policy_update(self, event):
+        """
+        Broadcast that a global policy has been updated.
+        """
+        await self.send(text_data=json.dumps({
+            'type': 'policy_update'
         }))

@@ -93,6 +93,26 @@ class NotificationService:
         NotificationService._send_notifications(sender, recipients, title, message, notif_type)
 
     @staticmethod
+    def notify_based_on_role(user, title, message, notif_type='system'):
+        """
+        Notify appropriate superiors based on the user's role:
+        - Employee -> Manager & Admins
+        - Manager -> Admins
+        """
+        from .models import User
+        if user.role == 'employee':
+            recipients = User.objects.filter(
+                Q(id=user.manager_id) | Q(role='admin')
+            ).exclude(id__isnull=True).distinct()
+        elif user.role == 'manager':
+            recipients = User.objects.filter(role='admin').distinct()
+        else:
+            recipients = User.objects.none()
+            
+        if recipients.exists():
+            NotificationService._send_notifications(user, recipients, title, message, notif_type)
+
+    @staticmethod
     def notify_shift_event(user, title, message, notif_type='status'):
         """
         Notify Employee, their Manager, and all Admins about a shift-related event.
@@ -106,6 +126,22 @@ class NotificationService:
         
         # If no sender is provided, use the user themselves as the logical 'source' of the event
         NotificationService._send_notifications(user, recipients, title, message, notif_type)
+
+    @staticmethod
+    def notify_attendance_override(admin_user, employee, date_str, new_status):
+        """
+        Notify Employee and their Manager about an attendance status override.
+        """
+        from .models import User
+        recipients = User.objects.filter(
+            Q(id=employee.id) | 
+            Q(id=employee.manager_id)
+        ).distinct()
+        
+        title = "Attendance Status Updated"
+        message = f"Admin {admin_user.full_name} has updated the attendance status for {employee.full_name} on {date_str} to '{new_status}'."
+        
+        NotificationService._send_notifications(admin_user, recipients, title, message, 'system')
 
 # ── Attendance Engine ──────────────────────────────────────────────────────────
 
@@ -586,6 +622,22 @@ class StatusService:
                 )
         except Exception as e:
             logger.error(f"WebSocket broadcast failed: {e}")
+
+    @staticmethod
+    def broadcast_policy_update():
+        """Broadcast to all users that the attendance policy has changed."""
+        try:
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                async_to_sync(channel_layer.group_send)(
+                    'status_updates',
+                    {
+                        'type': 'policy_update',
+                        'message': 'Full policy refresh required'
+                    }
+                )
+        except Exception as e:
+            logger.error(f"Policy broadcast failed: {e}")
 
     @staticmethod
     def get_user_status(user):

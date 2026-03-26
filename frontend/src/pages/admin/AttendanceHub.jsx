@@ -12,7 +12,7 @@ const AttendanceHub = () => {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const { policy } = useContext(AuthContext);
+  const { policy, user } = useContext(AuthContext);
 
   // Filter states
   const today = new Date().toISOString().split('T')[0];
@@ -147,6 +147,23 @@ const AttendanceHub = () => {
     link.download = `attendance_export_${dateFilter}_${Date.now()}.csv`;
     link.click();
     toast.success('Attendance exported successfully');
+  };
+
+  const handleOverride = async (record, status) => {
+    try {
+      if (!window.confirm(`Are you sure you want to change ${record.user_name}'s status to ${status.toUpperCase()}?`)) return;
+      
+      await api.post('/attendance/override_status/', {
+        user_id: record.user,
+        date: record.date,
+        status: status,
+        remark: 'Overridden by Admin via Hub'
+      });
+      toast.success('Status updated successfully');
+      fetchData(true);
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to update status');
+    }
   };
 
   if (loading) return <div className="text-indigo-400 p-8 text-center animate-pulse">Loading Attendance Hub...</div>;
@@ -318,20 +335,23 @@ const AttendanceHub = () => {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="text-[10px] text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
               <tr>
-                <th className="px-3 py-4 font-semibold tracking-wider">Date</th>
-                <th className="px-3 py-4 font-semibold tracking-wider">Name</th>
-                <th className="px-3 py-4 font-semibold tracking-wider hidden xl:table-cell">Role</th>
-                <th className="px-3 py-4 font-semibold tracking-wider">Login Time</th>
-                <th className="px-3 py-4 font-semibold tracking-wider hidden lg:table-cell">Last Logout</th>
-                <th className="px-3 py-4 font-semibold tracking-wider">Attendance</th>
-                <th className="px-3 py-4 font-semibold tracking-wider">Work (h)</th>
-                <th className="px-3 py-4 font-semibold tracking-wider">Break (h)</th>
-                <th className="px-3 py-4 font-semibold tracking-wider">Idle (h)</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-center">Anomalies</th>
-                <th className="px-3 py-4 font-semibold tracking-wider">Remarks / Reason</th>
+                <th className="px-2 py-3 font-semibold tracking-wider">Date</th>
+                <th className="px-2 py-3 font-semibold tracking-wider">Name</th>
+                <th className="px-2 py-3 font-semibold tracking-wider hidden xl:table-cell">Role</th>
+                <th className="px-2 py-3 font-semibold tracking-wider">Login Time</th>
+                <th className="px-2 py-3 font-semibold tracking-wider hidden lg:table-cell">Last Logout</th>
+                <th className="px-2 py-3 font-semibold tracking-wider">Attendance</th>
+                <th className="px-2 py-3 font-semibold tracking-wider">Work (h)</th>
+                <th className="px-2 py-3 font-semibold tracking-wider">Break (h)</th>
+                <th className="px-2 py-3 font-semibold tracking-wider">Idle (h)</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-center">Anomalies</th>
+                <th className="px-2 py-3 font-semibold tracking-wider hidden md:table-cell">Remarks</th>
+                {user?.role === 'admin' && (
+                  <th className="px-2 py-3 font-semibold tracking-wider text-center">Actions</th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
@@ -366,8 +386,8 @@ const AttendanceHub = () => {
                 
                 return (
                 <tr key={record.id} className="hover:bg-slate-700/20 transition-colors">
-                  <td className="px-3 py-4 font-mono text-slate-400 text-[10px]">{record.date}</td>
-                  <td className="px-3 py-4">
+                  <td className="px-2 py-3 font-mono text-slate-400 text-[10px]">{record.date}</td>
+                  <td className="px-2 py-3">
                      <div className="flex items-center gap-2">
                         <div className="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/30 text-xs">
                            {record.user_name?.charAt(0) || '?'}
@@ -375,12 +395,12 @@ const AttendanceHub = () => {
                         <p className="font-medium text-slate-200 text-xs truncate max-w-[120px]" title={record.user_name}>{record.user_name}</p>
                      </div>
                   </td>
-                  <td className="px-3 py-4 font-medium text-slate-400 uppercase tracking-wider text-[10px] hidden xl:table-cell">
+                  <td className="px-2 py-3 font-medium text-slate-400 uppercase tracking-wider text-[10px] hidden xl:table-cell">
                      {record.user_role || 'Employee'}
                   </td>
-                  <td className="px-3 py-4 text-slate-400 font-mono text-[10px]">{formatLastLogout(record.first_login)}</td>
-                  <td className="px-3 py-4 text-slate-400 font-mono text-[10px] hidden lg:table-cell">{formatLastLogout(record.last_logout)}</td>
-                  <td className="px-3 py-4">
+                  <td className="px-2 py-3 text-slate-400 font-mono text-[10px]">{formatLastLogout(record.first_login)}</td>
+                  <td className="px-2 py-3 text-slate-400 font-mono text-[10px] hidden lg:table-cell">{formatLastLogout(record.last_logout)}</td>
+                  <td className="px-2 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-1 w-max
                       ${isCalculating ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
                         normalizedStatus === 'present' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 
@@ -399,7 +419,7 @@ const AttendanceHub = () => {
                       {displayStatus === 'on_leave' ? 'On Leave' : displayStatus === 'half_day' ? 'Half Day' : displayStatus}
                     </span>
                   </td>
-                  <td className="px-3 py-4 text-emerald-400 font-mono text-[11px] whitespace-nowrap">
+                  <td className="px-2 py-3 text-emerald-400 font-mono text-[11px] whitespace-nowrap">
                     <LiveDuration
                       initialSeconds={record.total_work_seconds}
                       status={record.live_status}
@@ -407,7 +427,7 @@ const AttendanceHub = () => {
                       isToday={record.date === todayStr}
                     />
                   </td>
-                  <td className="px-3 py-4 text-amber-400 font-mono text-[11px] whitespace-nowrap">
+                  <td className="px-2 py-3 text-amber-400 font-mono text-[11px] whitespace-nowrap">
                     <LiveDuration
                       initialSeconds={record.total_break_seconds}
                       status={record.live_status}
@@ -415,7 +435,7 @@ const AttendanceHub = () => {
                       isToday={record.date === todayStr}
                     />
                   </td>
-                  <td className="px-3 py-4 text-rose-400 font-mono text-[11px] whitespace-nowrap">
+                  <td className="px-2 py-3 text-rose-400 font-mono text-[11px] whitespace-nowrap">
                     <LiveDuration
                       initialSeconds={record.total_idle_seconds}
                       status={record.live_status}
@@ -423,7 +443,7 @@ const AttendanceHub = () => {
                       isToday={record.date === todayStr}
                     />
                   </td>
-                  <td className="px-3 py-4 text-center">
+                  <td className="px-2 py-3 text-center">
                     {record.is_flagged ? (
                       <span className="text-rose-400 font-bold text-[10px] flex items-center justify-center gap-1 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>
                         <FlagIcon className="h-3 w-3" /> Flagged
@@ -432,18 +452,27 @@ const AttendanceHub = () => {
                       <span className="text-slate-600">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-4">
+                  <td className="px-2 py-3 hidden md:table-cell">
                     {record.manager_remark ? (
                       <div className="flex flex-col">
-                        <span className="text-indigo-400 text-[10px] font-medium italic underline underline-offset-4 decoration-indigo-500/30 uppercase tracking-wider">Note:</span>
-                        <p className="text-slate-300 text-[10px] mt-1 leading-relaxed truncate max-w-[150px]" title={record.manager_remark}>{record.manager_remark}</p>
+                        <span className="text-indigo-400 text-[9px] font-medium italic underline underline-offset-4 decoration-indigo-500/30 uppercase tracking-wider">Note:</span>
+                        <p className="text-slate-300 text-[10px] mt-0.5 leading-relaxed truncate max-w-[120px]" title={record.manager_remark}>{record.manager_remark}</p>
                       </div>
                     ) : record.flag_reason ? (
-                      <p className="text-slate-400 text-[10px] italic leading-relaxed truncate max-w-[150px]" title={record.flag_reason}>{record.flag_reason}</p>
+                      <p className="text-slate-400 text-[10px] italic leading-relaxed truncate max-w-[120px]" title={record.flag_reason}>{record.flag_reason}</p>
                     ) : (
                       <span className="text-slate-600 font-mono text-[10px]">-</span>
                     )}
                   </td>
+                  {user?.role === 'admin' && (
+                    <td className="px-2 py-3">
+                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        <button onClick={() => handleOverride(record, 'present')} title="Mark Present" className="w-6 h-6 flex items-center justify-center bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold rounded hover:bg-emerald-500/20 transition-colors">P</button>
+                        <button onClick={() => handleOverride(record, 'half_day')} title="Mark Half Day" className="w-6 h-6 flex items-center justify-center bg-sky-500/10 text-sky-400 border border-sky-500/20 text-[10px] font-bold rounded hover:bg-sky-500/20 transition-colors">H</button>
+                        <button onClick={() => handleOverride(record, 'absent')} title="Mark Absent" className="w-6 h-6 flex items-center justify-center bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-bold rounded hover:bg-rose-500/20 transition-colors">A</button>
+                      </div>
+                    </td>
+                  )}
                 </tr>
                 );
               })

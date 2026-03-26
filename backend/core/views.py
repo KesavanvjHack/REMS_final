@@ -351,6 +351,52 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
             return qs.filter(Q(user=user) | Q(user__in=subordinate_ids))
         return qs.filter(user=user)
 
+    @action(detail=False, methods=['post'])
+    def override_status(self, request):
+        """Admin override for a user's attendance status."""
+        if request.user.role != 'admin':
+            return Response({'error': 'Only admins can override attendance.'}, status=403)
+
+        user_id = request.data.get('user_id')
+        date_str = request.data.get('date')
+        new_status = request.data.get('status')
+        remark = request.data.get('remark', 'Status updated by admin')
+
+        if not all([user_id, date_str, new_status]):
+            return Response({'error': 'user_id, date, and status are required'}, status=400)
+
+        from .models import User
+        try:
+            employee = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=404)
+
+        attendance, created = Attendance.objects.get_or_create(
+            user=employee,
+            date=date_str,
+            defaults={
+                'status': new_status,
+                'manager_remark': remark,
+                'is_flagged': True
+            }
+        )
+
+        if not created:
+            attendance.status = new_status
+            attendance.manager_remark = remark
+            attendance.is_flagged = True
+            attendance.save(update_fields=['status', 'manager_remark', 'is_flagged', 'updated_at'])
+
+        # Notify Employee & Manager
+        from .services import NotificationService
+        NotificationService.notify_attendance_override(request.user, employee, date_str, new_status)
+
+        return Response({
+            'status': 'success',
+            'message': f'Attendance for {employee.full_name} on {date_str} updated to {new_status}.',
+            'attendance_id': attendance.id
+        })
+
     @action(detail=False, methods=['get'])
     def today(self, request):
         """Get current user's today attendance."""
@@ -908,47 +954,58 @@ class AttendancePolicyViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         # Capture old values for comparison
         old_instance = self.get_object()
-        old_name = old_instance.name
-        old_idle = old_instance.idle_threshold_minutes
-        old_full = old_instance.min_working_hours
-        old_present = old_instance.present_hours
-        old_half = old_instance.half_day_hours
-        old_start = old_instance.shift_start_time
-        old_end = old_instance.shift_end_time
-        old_timeout = old_instance.session_timeout_hours
+        
+        # Track fields and their human-readable labels
+        fields_to_track = {
+            'name': 'Policy Name',
+            'idle_threshold_minutes': 'Idle Threshold (min)',
+            'min_working_hours': 'Full-Day Hours',
+            'present_hours': 'Present Hours',
+            'half_day_hours': 'Half-Day Hours',
+            'shift_start_time': 'Shift Start',
+            'shift_end_time': 'Shift End',
+            'session_timeout_hours': 'Session Timeout (h)'
+        }
 
+        old_values = {field: getattr(old_instance, field) for field in fields_to_track}
+        
+        # Save the new state
         instance = serializer.save()
 
-        # Build list of specific changes
+        # Build list of specific changes with Old -> New comparison
         changes = []
-        if old_name != instance.name:
-            changes.append(f"name to {instance.name}")
-        if old_idle != instance.idle_threshold_minutes:
-            changes.append(f"Idle Threshold to {instance.idle_threshold_minutes}m")
-        if old_full != instance.min_working_hours:
-            changes.append(f"Full-Day Hours to {instance.min_working_hours}h")
-        if old_present != instance.present_hours:
-            changes.append(f"Present Hours to {instance.present_hours}h")
-        if old_half != instance.half_day_hours:
-            changes.append(f"Half-Day Hours to {instance.half_day_hours}h")
-        if old_start != instance.shift_start_time:
-            changes.append(f"Shift Start to {instance.shift_start_time}")
-        if old_end != instance.shift_end_time:
-            changes.append(f"Shift End to {instance.shift_end_time}")
-        if old_timeout != instance.session_timeout_hours:
-            changes.append(f"Session Timeout to {instance.session_timeout_hours}h")
+        changes_dict = {} # For Audit Log extra_data
+        
+        for field, label in fields_to_track.items():
+            old_val = old_values[field]
+            new_val = getattr(instance, field)
+            if old_val != new_val:
+                # Format time objects for readability
+                fmt_old = old_val.strftime("%I:%M %p") if hasattr(old_val, 'strftime') else old_val
+                fmt_new = new_val.strftime("%I:%M %p") if hasattr(new_val, 'strftime') else new_val
+                
+                changes.append(f"{label}: {fmt_old} → {fmt_new}")
+                changes_dict[field] = {'old': str(old_val), 'new': str(new_val)}
 
-        msg_detail = f"Changed {', '.join(changes)}" if changes else "Updated settings"
+        if not changes:
+            return
+
+        # Detailed message for notifications and logs
+        msg_header = f"Global Attendance Policy '{instance.name}' Updated:"
+        msg_body = "\n".join([f"• {c}" for c in changes])
+        full_msg = f"{msg_header}\n{msg_body}"
 
         AuditService.log(
             self.request.user, 'policy_change',
-            f'Policy "{instance.name}" updated: {msg_detail}',
-            self.request
+            f'Policy "{instance.name}" updated by {self.request.user.full_name}',
+            self.request,
+            extra_data={'changes': changes_dict, 'policy_name': instance.name}
         )
+
         NotificationService.notify_all_active_users(
             self.request.user,
-            "Policy Modified",
-            f"The Attendance Policy was modified: {msg_detail}.",
+            "Policy Rule Updated",
+            full_msg,
             "system"
         )
 

@@ -167,6 +167,13 @@ class AttendancePolicy(models.Model):
     def __str__(self):
         return f'{self.name} ({self.min_working_hours}h min)'
 
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        super().save(*args, **kwargs)
+        # Broadcast policy update to all clients
+        from .services import StatusService
+        StatusService.broadcast_policy_update()
+
 
 class Holiday(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

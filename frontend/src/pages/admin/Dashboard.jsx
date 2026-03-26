@@ -69,13 +69,13 @@ const AdminDashboard = () => {
   ] : [];
 
   const StatCard = ({ title, value, icon: Icon, colorClass }) => (
-    <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl flex items-center gap-4">
-      <div className={`p-4 rounded-xl ${colorClass}`}>
+    <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl flex items-center gap-4 overflow-hidden">
+      <div className={`p-4 rounded-xl shrink-0 ${colorClass}`}>
         <Icon className="h-8 w-8 text-white" />
       </div>
-      <div>
-        <p className="text-slate-400 text-sm font-medium">{title}</p>
-        <p className="text-3xl font-bold text-slate-100">{value}</p>
+      <div className="flex-1 min-w-0">
+        <p className="text-slate-400 text-[13px] font-medium leading-snug break-words" title={title}>{title}</p>
+        <p className="text-2xl font-bold text-slate-100 truncate mt-1" title={value}>{value}</p>
       </div>
     </div>
   );

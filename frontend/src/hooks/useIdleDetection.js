@@ -3,7 +3,7 @@ import api from '../api/axios';
 import { AuthContext } from '../context/AuthContext';
 
 const useIdleDetection = (idleTimeMinutes = 15) => {
-  const { status, policy } = useContext(AuthContext);
+  const { status, policy, refreshActivity } = useContext(AuthContext);
   const [isIdle, setIsIdle] = useState(false);
   const idleTimeoutRef = useRef(null);
   const isIdleRef = useRef(false);
@@ -48,6 +48,9 @@ const useIdleDetection = (idleTimeMinutes = 15) => {
   }, []);
 
   const resetTimer = useCallback(() => {
+    // Refresh session activity timestamp in AuthContext
+    refreshActivity();
+
     // If currently idle, resume activity
     if (isIdleRef.current) {
       handleIdleStop();
@@ -62,7 +65,7 @@ const useIdleDetection = (idleTimeMinutes = 15) => {
       // If idle but shift ended, force stop idle
       handleIdleStop();
     }
-  }, [idleTimeMinutes, handleIdleStart, handleIdleStop, status, isWithinWorkWindow]);
+  }, [idleTimeMinutes, handleIdleStart, handleIdleStop, status, isWithinWorkWindow, refreshActivity]);
 
   useEffect(() => {
     // 1. Sync initial state from backend
