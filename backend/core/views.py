@@ -399,11 +399,15 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def today(self, request):
-        """Get current user's today attendance."""
+        """Get current user's today attendance with real-time recalculation."""
+        from .services import AttendanceService
         today = date.today()
         attendance = Attendance.objects.filter(user=request.user, date=today).first()
         if not attendance:
             return Response({'detail': 'No attendance record for today.'}, status=404)
+        
+        # Ensure we return the most up-to-date real-time data
+        AttendanceService.recalculate_status(attendance)
         return Response(AttendanceSerializer(attendance).data)
 
     @action(detail=False, methods=['get'])
@@ -744,7 +748,12 @@ class TeamTimesheetView(APIView):
             member_att = att_map.get(member.id)
             
             if member_att:
-                # Use actual attendance data (Serializer handles last_logout and hours)
+                # Ensure real-time accuracy for today's records shown to managers
+                if member_att.date == date.today():
+                    from .services import AttendanceService
+                    AttendanceService.recalculate_status(member_att)
+                
+                # Use actual attendance data
                 record = AttendanceSerializer(member_att).data
                 record['user_name'] = member.full_name
                 record['user_email'] = member.email

@@ -48,6 +48,8 @@ class NotificationService:
             return
         created = Notification.objects.bulk_create(notifications)
         channel_layer = get_channel_layer()
+        sender_name = sender.full_name if sender else "System"
+        
         for notif in created:
             async_to_sync(channel_layer.group_send)(
                 'status_updates',
@@ -58,25 +60,9 @@ class NotificationService:
                     'title': notif.title,
                     'message': notif.message,
                     'notif_type': notif.type,
-                    'sender_name': sender.full_name
+                    'sender_name': sender_name
                 }
             )
-
-    @staticmethod
-    def notify_based_on_role(sender, title, message, notif_type='system'):
-        """
-        Role-aware notification dispatcher:
-        - employee -> notify managers + admins
-        - manager  -> notify admins only
-        - admin    -> notify admins (other admins)
-        """
-        from .models import User
-        if sender.role == 'employee':
-            recipients = User.objects.filter(role__in=['admin', 'manager']).exclude(id=sender.id).distinct()
-        else:
-            # manager or admin: only notify admins
-            recipients = User.objects.filter(role='admin').exclude(id=sender.id).distinct()
-        NotificationService._send_notifications(sender, recipients, title, message, notif_type)
 
     @staticmethod
     def notify_managers_and_admins(sender, title, message, notif_type='system'):
@@ -182,32 +168,11 @@ class AttendanceService:
         Recalculate total work/break/idle seconds and set status.
         Status is NEVER manually set – always derived from time data.
         """
+        from django.utils import timezone
         from .models import AttendancePolicy
-
-        # Total work session seconds
-        work_sessions = attendance.work_sessions.filter(end_time__isnull=False)
-        total_work = sum(
-            int((ws.end_time - ws.start_time).total_seconds())
-            for ws in work_sessions
-        )
-
-        # Total break seconds
-        break_sessions = attendance.work_sessions.prefetch_related('break_sessions')
-        total_break = 0
-        for ws in break_sessions:
-            for bs in ws.break_sessions.filter(end_time__isnull=False):
-                total_break += int((bs.end_time - bs.start_time).total_seconds())
-
-        # Total idle seconds
-        total_idle = 0
-        for ws in break_sessions:
-            for il in ws.idle_logs.filter(end_time__isnull=False):
-                total_idle += int((il.end_time - il.start_time).total_seconds())
-
-        # Status calculation based only on total logged-in work hours
-        total_work_hours = total_work / 3600
-
-        # Get policy
+        now = timezone.now()
+        
+        # 1. Get policy and shift end for boundary enforcement
         try:
             policy = AttendancePolicy.objects.filter(is_active=True).first()
             present_hours = float(policy.present_hours) if policy else 8.0
@@ -215,13 +180,71 @@ class AttendanceService:
             half_day_hours = float(policy.half_day_hours) if policy else 4.0
             idle_threshold_minutes = policy.idle_threshold_minutes if policy else 15
         except Exception:
+            policy = None
             present_hours = 8.0
             min_hours = 8.0
             half_day_hours = 4.0
             idle_threshold_minutes = 15
 
+        import datetime
+        now_local = timezone.localtime(now)
+        shift_end_dt = now_local # default
+        if policy:
+           shift_end_dt = timezone.make_aware(datetime.datetime.combine(now_local.date(), policy.shift_end_time))
+        
+        # Enforce shift boundary for calculations: if shift ended, cap 'now' at shift_end_dt
+        calculation_now = now
+        if now_local > shift_end_dt:
+            calculation_now = shift_end_dt
+
+        # 2. Total work session seconds (closed + active)
+        work_sessions = attendance.work_sessions.all()
+        total_work = 0
+        for ws in work_sessions:
+            ws_end = ws.end_time if ws.end_time else calculation_now
+            # Cap ws_end at calculation_now even if manually stopped late
+            ws_end = min(ws_end, calculation_now)
+            
+            if ws_end > ws.start_time:
+                total_work += int((ws_end - ws.start_time).total_seconds())
+
+        # 3. Total break seconds
+        total_break = 0
+        for ws in work_sessions:
+            for bs in ws.break_sessions.all():
+                bs_end = bs.end_time if bs.end_time else calculation_now
+                bs_end = min(bs_end, calculation_now)
+                
+                if bs_end > bs.start_time:
+                    total_break += int((bs_end - bs.start_time).total_seconds())
+
+        # 4. Total idle seconds
+        total_idle = 0
+        for ws in work_sessions:
+            for il in ws.idle_logs.all():
+                il_end = il.end_time if il.end_time else calculation_now
+                il_end = min(il_end, calculation_now)
+                
+                if il_end > il.start_time:
+                    total_idle += int((il_end - il.start_time).total_seconds())
+
+        # 5. Status calculation based on effective work hours (work - break - idle)
+        effective_work_seconds = max(0, total_work - total_break - total_idle)
+        total_work_hours = effective_work_seconds / 3600
+
         # Determine status
         auto_remark = ""
+        
+        # Shift End Check
+        import datetime
+        now_local = timezone.localtime(now)
+        shift_end_dt = now_local # default
+        if policy:
+           shift_end_dt = timezone.make_aware(datetime.datetime.combine(now_local.date(), policy.shift_end_time))
+        
+        is_shift_over = now_local >= shift_end_dt
+        has_open_session = attendance.work_sessions.filter(end_time__isnull=True).exists()
+
         if attendance.status in (
             attendance.STATUS_ON_LEAVE,
             attendance.STATUS_HOLIDAY,
@@ -231,12 +254,16 @@ class AttendanceService:
             status = attendance.STATUS_PRESENT
             auto_remark = ""
         elif total_work_hours >= min_hours:
-            status = attendance.STATUS_PRESENT  # min_hours still counts as Present (Full Day)
+            status = attendance.STATUS_PRESENT
+            auto_remark = ""
+        elif has_open_session and not is_shift_over:
+            # Still working and shift hasn't ended: Keep as calculating/optimistic
+            status = attendance.STATUS_PRESENT
             auto_remark = ""
         elif total_work_hours >= half_day_hours:
             status = attendance.STATUS_HALF_DAY
             auto_remark = f"Hours ({total_work_hours:.2f}h) below required {min_hours}h for Present status."
-        elif total_work > 0:
+        elif effective_work_seconds > 0:
             status = attendance.STATUS_HALF_DAY if total_work_hours > 0 else attendance.STATUS_ABSENT
             auto_remark = f"Hours ({total_work_hours:.2f}h) below threshold for Half Day."
         else:
@@ -247,23 +274,31 @@ class AttendanceService:
         idle_percentage = (total_idle / total_work * 100) if total_work > 0 else 0
         should_flag_idle = idle_percentage > 30
 
-        attendance.total_work_seconds = total_work
+        attendance.total_work_seconds = effective_work_seconds
         attendance.total_break_seconds = total_break
         attendance.total_idle_seconds = total_idle
+        
+        # Override status
         attendance.status = status
 
         # Only set automated remark if manager hasn't provided one
-        if not attendance.manager_remark or "Hours" in (attendance.manager_remark or "") or "No work" in (attendance.manager_remark or ""):
-            attendance.manager_remark = auto_remark
+        # AND only if the shift is over or session closed (to avoid premature "Below hours" notes)
+        if not attendance.manager_remark or any(text in (attendance.manager_remark or "") for text in ["Hours", "No work"]):
+            if is_shift_over or not has_open_session:
+                attendance.manager_remark = auto_remark
+            else:
+                attendance.manager_remark = "" # Clear automated warnings while still working
 
-        # Dynamic Flagging
-        if should_flag_idle:
+        # Dynamic Flagging - only if shift is over or session closed
+        if should_flag_idle and (is_shift_over or not has_open_session):
             attendance.is_flagged = True
             attendance.flag_reason = f'High idle time: {idle_percentage:.1f}% of work time'
-        elif attendance.is_flagged and 'High idle time' in (attendance.flag_reason or ''):
-            # Clear automatically only if it was an idle flag and now it resolves below 30%
-            attendance.is_flagged = False
-            attendance.flag_reason = ''
+        elif not should_flag_idle or (not is_shift_over and has_open_session):
+            # Clear or don't set flag if still working or idle is fine
+            if attendance.is_flagged and any(text in (attendance.flag_reason or '') for text in ['High idle', 'Hours']):
+                attendance.is_flagged = False
+                attendance.flag_reason = ''
+        
         attendance.save(update_fields=[
             'total_work_seconds', 'total_break_seconds', 'total_idle_seconds',
             'status', 'is_flagged', 'flag_reason', 'manager_remark', 'updated_at'
@@ -310,40 +345,91 @@ class AttendanceService:
     @staticmethod
     def notify_upcoming_shifts():
         """
-        Notify employees 5 minutes before their shift starts.
+        Notify employees, managers, and admins 5 minutes before shifts start.
         """
-        from .models import User, AttendancePolicy, Notification
+        from .models import User, AttendancePolicy
+        from django.core.cache import cache
         import datetime
         
         now_local = timezone.localtime(timezone.now())
         today = now_local.date()
         
-        # We check for shifts starting roughly 5 minutes from now
-        # In a real system, we'd use a buffer (e.g. 1 min window)
-        target_time = (now_local + datetime.timedelta(minutes=5)).time()
+        # Target time is exactly 5 minutes from now
+        target_time = (now_local + datetime.timedelta(minutes=5)).replace(second=0, microsecond=0)
         target_time_str = target_time.strftime("%H:%M")
         
-        # Find policies where shift_start_time is close to target_time
-        # Simplified: check for exact minute match for this demonstration
+        # Check all active policies
         policies = AttendancePolicy.objects.filter(is_active=True)
         
-        notified_count = 0
+        total_notifications = 0
+        system_sender = User.objects.filter(role='admin', is_active=True).first()
+        admins = User.objects.filter(role='admin', is_active=True).distinct()
+
         for policy in policies:
+            # Match shift start time
             if policy.shift_start_time.strftime("%H:%M") == target_time_str:
-                # Notify all employees under this policy
+                # Cache key to prevent duplicate runs within the same minute
+                cache_key = f"shift_notif_{policy.id}_{today}_{target_time_str}"
+                if cache.get(cache_key):
+                    continue
+                
+                # Get employees under this policy
                 users = User.objects.filter(is_active=True, role='employee')
                 if policy.department:
                     users = users.filter(department=policy.department)
                 
-                for user in users:
+                if not users.exists():
+                    continue
+
+                affected_employees = list(users)
+                employee_names = ", ".join([e.full_name for e in affected_employees[:5]])
+                if len(affected_employees) > 5:
+                    employee_names += f" and {len(affected_employees) - 5} others"
+
+                # 1. Notify Employees (Individual)
+                for employee in affected_employees:
                     NotificationService._send_notifications(
-                        user, [user],
+                        system_sender, [employee],
                         "Shift Starting Soon",
                         f"Reminder: Your shift starts in 5 minutes at {policy.shift_start_time.strftime('%I:%M %p')}.",
                         "system"
                     )
-                    notified_count += 1
-        return notified_count
+                    total_notifications += 1
+                
+                # 2. Notify Managers (Grouped)
+                managers = User.objects.filter(
+                    id__in=users.values_list('manager_id', flat=True)
+                ).distinct()
+                
+                for manager in managers:
+                    manager_employees = [e for e in affected_employees if e.manager_id == manager.id]
+                    if manager_employees:
+                        emp_list = ", ".join([e.full_name for e in manager_employees[:3]])
+                        if len(manager_employees) > 3:
+                            emp_list += f" and {len(manager_employees) - 3} others"
+                        
+                        NotificationService._send_notifications(
+                            system_sender, [manager],
+                            "Upcoming Team Shift",
+                            f"Shift starting in 5 minutes for: {emp_list}.",
+                            "system"
+                        )
+                        total_notifications += 1
+
+                # 3. Notify Admins (System-wide)
+                dept_info = f" in {policy.department.name}" if policy.department else ""
+                NotificationService._send_notifications(
+                    system_sender, admins,
+                    "Upcoming Shifts Alert",
+                    f"{len(affected_employees)} employees starting shifts{dept_info} in 5 minutes: {employee_names}.",
+                    "system"
+                )
+                total_notifications += len(admins)
+
+                # Mark as sent
+                cache.set(cache_key, True, timeout=120)
+
+        return total_notifications
 
 
 # ── Work Session Service ───────────────────────────────────────────────────────
@@ -654,6 +740,9 @@ class StatusService:
         if not attendance:
             status = 'online' if cache.get(f'presence_{user.id}') else 'offline'
             return {'status': status, 'attendance': None}
+
+        # Ensure real-time accuracy for status displays
+        AttendanceService.recalculate_status(attendance)
  
         open_session = WorkSession.objects.filter(
             attendance=attendance,
@@ -769,8 +858,15 @@ class ReportService:
         qs = qs.filter(date__lte=effective_to_date)
 
         # Get policy for cutoff check
-        policy = AttendancePolicy.objects.first()
+        policy = AttendancePolicy.objects.filter(is_active=True).first()
         shift_end = policy.shift_end_time if policy else datetime.time(17, 30)
+        
+        # Recalculate TODAY's records in the queryset to ensure real-time accuracy
+        # This is CRITICAL for dashboards and reports to stay in sync with live activity
+        from .services import AttendanceService
+        today_records = qs.filter(date=today)
+        for record in today_records:
+            AttendanceService.recalculate_status(record)
         
         # IST check
         ist = pytz.timezone('Asia/Kolkata')
@@ -838,6 +934,12 @@ class ReportService:
         qs = Attendance.objects.filter(date__range=(start, end))
         if user_ids is not None:
             qs = qs.filter(user_id__in=user_ids)
+
+        # Ensure today's data is recalculated for the trend chart
+        from .services import AttendanceService
+        today_records = qs.filter(date=end)
+        for record in today_records:
+            AttendanceService.recalculate_status(record)
 
         result = []
         d = start
@@ -911,6 +1013,11 @@ class ProductivityScoringService:
         if not attendance:
             return 0  # No attendance = 0 score
 
+        # Ensure live data is used for today's score calculation
+        if target_date == date.today():
+            from .services import AttendanceService
+            AttendanceService.recalculate_status(attendance)
+
         # Base score from work hours
         try:
             policy = AttendancePolicy.objects.filter(is_active=True).first()
@@ -958,12 +1065,20 @@ class PayrollPrepService:
 
         payroll_data = []
         users = User.objects.filter(is_active=True)
+        today = date.today()
 
         for user in users:
+            user_qs = Attendance.objects.filter(user=user, date__range=(start_date, end_date))
+            
+            # Recalculate today's record if it falls within the payroll period
+            if start_date <= today <= end_date:
+                today_att = user_qs.filter(date=today).first()
+                if today_att:
+                    from .services import AttendanceService
+                    AttendanceService.recalculate_status(today_att)
+
             # 1. Total Days Worked
-            present_days = Attendance.objects.filter(
-                user=user, 
-                date__range=[start_date, end_date],
+            present_days = user_qs.filter(
                 status__in=[Attendance.STATUS_PRESENT, Attendance.STATUS_HALF_DAY]
             ).count()
 

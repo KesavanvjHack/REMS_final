@@ -139,9 +139,6 @@ class AttendanceSerializer(serializers.ModelSerializer):
     user_name = serializers.CharField(source='user.full_name', read_only=True)
     user_role = serializers.CharField(source='user.role', read_only=True)
     
-    total_work_seconds = serializers.SerializerMethodField()
-    total_break_seconds = serializers.SerializerMethodField()
-    total_idle_seconds = serializers.SerializerMethodField()
     effective_work_seconds = serializers.SerializerMethodField()
     work_hours = serializers.SerializerMethodField()
     live_status = serializers.SerializerMethodField()
@@ -165,51 +162,11 @@ class AttendanceSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
 
-    def get_total_work_seconds(self, obj):
-        total = obj.total_work_seconds
-        # Use .all() to leverage prefetch cache
-        sessions = list(obj.work_sessions.all())
-        latest_session = sessions[0] if sessions else None
-        
-        if latest_session and latest_session.end_time is None:
-            total += int((timezone.now() - latest_session.start_time).total_seconds())
-        return total
-
-    def get_total_break_seconds(self, obj):
-        total = obj.total_break_seconds
-        sessions = list(obj.work_sessions.all())
-        latest_session = sessions[0] if sessions else None
-        
-        if latest_session and latest_session.end_time is None:
-            # Use .all() on pre-ordered prefetch
-            breaks = list(latest_session.break_sessions.all())
-            latest_break = breaks[0] if breaks else None
-            if latest_break and latest_break.end_time is None:
-                total += int((timezone.now() - latest_break.start_time).total_seconds())
-        return total
-
-    def get_total_idle_seconds(self, obj):
-        total = obj.total_idle_seconds
-        sessions = list(obj.work_sessions.all())
-        latest_session = sessions[0] if sessions else None
-        
-        if latest_session and latest_session.end_time is None:
-            # Use .all() on pre-ordered prefetch
-            idles = list(latest_session.idle_logs.all())
-            latest_idle = idles[0] if idles else None
-            if latest_idle and latest_idle.end_time is None:
-                total += int((timezone.now() - latest_idle.start_time).total_seconds())
-        return total
-
     def get_effective_work_seconds(self, obj):
-        work = self.get_total_work_seconds(obj)
-        breaks = self.get_total_break_seconds(obj)
-        idle = self.get_total_idle_seconds(obj)
-        return max(0, work - breaks - idle)
+        return obj.effective_work_seconds
 
     def get_work_hours(self, obj):
-        total = self.get_total_work_seconds(obj)
-        return round(total / 3600, 2)
+        return round(obj.total_work_seconds / 3600, 2)
 
     def get_live_status(self, obj):
         sessions = list(obj.work_sessions.all())
@@ -219,15 +176,15 @@ class AttendanceSerializer(serializers.ModelSerializer):
             breaks = list(latest_session.break_sessions.all())
             latest_break = breaks[0] if breaks else None
             if latest_break and latest_break.end_time is None:
-                return 'On Break'
+                return 'on_break'
                 
             idles = list(latest_session.idle_logs.all())
             latest_idle = idles[0] if idles else None
             if latest_idle and latest_idle.end_time is None:
-                return 'Idle'
+                return 'idle'
                 
-            return 'Working'
-        return 'Offline'
+            return 'working'
+        return 'offline'
 
     def get_first_login(self, obj):
         # Earliest start_time of any work session on this date

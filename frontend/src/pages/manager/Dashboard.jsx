@@ -3,18 +3,23 @@ import api from '../../api/axios';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
 } from 'recharts';
-import { UsersIcon, ExclamationTriangleIcon, AcademicCapIcon, MapPinIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { 
+  UsersIcon, ExclamationTriangleIcon, AcademicCapIcon, MapPinIcon, ClockIcon,
+  ArrowPathIcon
+} from '@heroicons/react/24/outline';
 
 const ManagerDashboard = () => {
   const [summary, setSummary] = useState(null);
   const [teamStats, setTeamStats] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     fetchData();
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
     try {
       const [sumRes, teamRes] = await Promise.all([
         api.get('/reports/?type=summary'),
@@ -26,6 +31,7 @@ const ManagerDashboard = () => {
       console.error('Failed to load dashboard data', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -64,7 +70,17 @@ const ManagerDashboard = () => {
 
   return (
     <div className="space-y-6 page-fade-in">
-      <h1 className="text-2xl font-bold tracking-tight text-white mb-6">Manager Dashboard</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold tracking-tight text-white">Manager Dashboard</h1>
+        <button 
+          onClick={() => fetchData(true)}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-slate-200 text-sm font-medium transition-all hover:scale-105 active:scale-95 disabled:opacity-50"
+        >
+          <ArrowPathIcon className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          {refreshing ? 'Refreshing...' : 'Refresh Data'}
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
         <StatCard 

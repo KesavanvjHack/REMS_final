@@ -241,8 +241,8 @@ class Attendance(models.Model):
 
     @property
     def effective_work_seconds(self):
-        """Actual productive seconds = work - break - idle"""
-        return max(0, self.total_work_seconds - self.total_break_seconds - self.total_idle_seconds)
+        """Actual productive seconds. Already net (work - break - idle) as stored by service."""
+        return max(0, self.total_work_seconds)
 
 
 class WorkSession(models.Model):
