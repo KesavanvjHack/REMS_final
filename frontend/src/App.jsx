@@ -89,6 +89,7 @@ function App() {
             <Route path="/manager/leave" element={<LeaveApproval />} />
             <Route path="/manager/reports" element={<TeamReports />} />
             <Route path="/manager/tasks" element={<AssignTasks />} />
+            <Route path="/manager/audit" element={<AuditLogs />} />
             <Route path="/manager/work" element={<WorkSession />} />
           </Route>
 

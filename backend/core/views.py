@@ -227,7 +227,10 @@ class LogoutView(APIView):
             # 2. Broadcast status change immediately
             StatusService.broadcast_status_change(user)
             
-            # 3. Notify managers/admins of employee logout
+            # 3. Stop any active work/idle sessions upon logout for accurate time tracking
+            WorkSessionService.stop_session(user)
+            
+            # 4. Notify managers/admins of employee logout
             NotificationService.notify_based_on_role(user, "User Logout", f"{user.full_name} has logged out.", "system")
             
             AuditService.log(user, 'logout', f'User {user.email} logged out', request)
@@ -1217,8 +1220,8 @@ class ExportView(APIView):
         elif export_type == 'leave':
             return self._export_leave(request, from_date, to_date, file_format)
         elif export_type == 'audit':
-            if request.user.role != 'admin':
-                return Response({'detail': 'Admin only.'}, status=403)
+            if request.user.role not in ['admin', 'manager']:
+                return Response({'detail': 'Unauthorized.'}, status=403)
             return self._export_audit(request, from_date, to_date, file_format)
         elif export_type == 'payroll':
             if request.user.role not in ['admin', 'manager']:
@@ -1328,6 +1331,10 @@ class ExportView(APIView):
         import csv
         from django.http import HttpResponse
         qs = AuditLog.objects.select_related('user').all()
+
+        if request.user.role == 'manager':
+            subordinate_ids = request.user.subordinates.values_list('id', flat=True)
+            qs = qs.filter(Q(user=request.user) | Q(user_id__in=subordinate_ids))
 
         category = request.query_params.get('category')
         user_id = request.query_params.get('user_id')

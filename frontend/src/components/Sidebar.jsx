@@ -36,6 +36,7 @@ const Sidebar = () => {
     { name: 'Leave Approvals', to: '/manager/leave', icon: CalendarDaysIcon },
     { name: 'Team Productivity & Analytics', to: '/manager/reports', icon: ChartBarIcon },
     { name: 'Assign Tasks', to: '/manager/tasks', icon: ClipboardDocumentCheckIcon },
+    { name: 'System Audit Logs', to: '/manager/audit', icon: DocumentTextIcon },
     { name: 'My Personal Dashboard', to: '/employee', icon: HomeIcon },
   ];
 
