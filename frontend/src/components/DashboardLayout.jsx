@@ -4,12 +4,13 @@ import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import { AuthContext } from '../context/AuthContext';
 import useIdleDetection from '../hooks/useIdleDetection';
+import IdleWarningModal from './IdleWarningModal';
 
 const DashboardLayout = ({ children }) => {
   const { user, idleThreshold } = useContext(AuthContext);
   
   // Only trigger idle detection for employees
-  const isIdle = (user?.role === 'employee') ? useIdleDetection(idleThreshold) : false;
+  const { isIdle, idleStartTime, handleIdleStop } = (user?.role === 'employee') ? useIdleDetection(idleThreshold) : { isIdle: false, idleStartTime: null, handleIdleStop: () => {} };
 
   return (
     <div className="flex bg-slate-900 min-h-screen">
@@ -23,7 +24,7 @@ const DashboardLayout = ({ children }) => {
               <span className="text-xl">⚠️</span>
               <div className="flex-1">
                 <p className="font-semibold text-amber-200 text-sm">You've been idle for {idleThreshold}+ minutes</p>
-                <p className="text-xs text-amber-400/80 mt-0.5">Move your mouse or press any key to resume. Your manager has been notified.</p>
+                <p className="text-xs text-amber-400/80 mt-0.5">Your manager and admin have been notified. Click the button below to resume.</p>
               </div>
               <span className="text-[10px] font-bold uppercase tracking-widest text-amber-500/70 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded-md">IDLE</span>
             </div>
@@ -31,6 +32,13 @@ const DashboardLayout = ({ children }) => {
           {children || <Outlet />}
         </main>
       </div>
+
+      <IdleWarningModal 
+        isOpen={isIdle} 
+        onResume={handleIdleStop} 
+        idleStartTime={idleStartTime}
+        idleTime={idleThreshold} 
+      />
     </div>
   );
 };

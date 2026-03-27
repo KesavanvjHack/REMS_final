@@ -539,7 +539,16 @@ class IdleService:
     @transaction.atomic
     def start_idle(user):
         """Log idle start. Called by frontend after 15 min of inactivity."""
-        from .models import WorkSession, IdleLog
+        from .models import WorkSession, IdleLog, AttendancePolicy
+        import datetime
+
+        # 1. Enforce shift hours (Idle detection only during shift)
+        policy = AttendancePolicy.objects.filter(is_active=True).first()
+        if policy:
+            now_local = timezone.localtime(timezone.now())
+            if now_local.time() < policy.shift_start_time or now_local.time() > policy.shift_end_time:
+                # Outside shift hours — ignore idle detection request
+                return None, False
 
         attendance, _ = AttendanceService.get_or_create_today(user)
         open_session = WorkSession.objects.filter(
