@@ -213,15 +213,24 @@ class LogoutView(APIView):
 
     def post(self, request):
         try:
+            from django.core.cache import cache
+            user = request.user
+            
             refresh_token = request.data.get('refresh')
             if refresh_token:
                 token = RefreshToken(refresh_token)
                 token.blacklist()
             
-            # Notify managers/admins of employee logout
-            NotificationService.notify_based_on_role(request.user, "User Logout", f"{request.user.full_name} has logged out.", "system")
+            # 1. Clear presence cache for instant offline status
+            cache.delete(f'presence_{user.id}')
             
-            AuditService.log(request.user, 'logout', f'User {request.user.email} logged out', request)
+            # 2. Broadcast status change immediately
+            StatusService.broadcast_status_change(user)
+            
+            # 3. Notify managers/admins of employee logout
+            NotificationService.notify_based_on_role(user, "User Logout", f"{user.full_name} has logged out.", "system")
+            
+            AuditService.log(user, 'logout', f'User {user.email} logged out', request)
             return Response({'detail': 'Logged out successfully.'})
         except TokenError:
             return Response({'detail': 'Invalid or expired token.'}, status=status.HTTP_400_BAD_REQUEST)

@@ -30,6 +30,11 @@ class StatusConsumer(AsyncWebsocketConsumer):
             self.group_name,
             self.channel_name
         )
+        
+        # If we know the user ID, clear their presence and broadcast offline status
+        if hasattr(self, 'user_id'):
+            cache.delete(f'presence_{self.user_id}')
+            await self.trigger_status_broadcast(self.user_id)
 
     async def receive(self, text_data):
         """Handle presence heartbeats from clients."""
@@ -38,6 +43,7 @@ class StatusConsumer(AsyncWebsocketConsumer):
             if data.get('type') == 'presence':
                 user_id = data.get('user_id')
                 if user_id:
+                    self.user_id = user_id # Store for disconnect cleanup
                     # Store user ID in cache with a 60-second TTL
                     cache.set(f'presence_{user_id}', True, 60)
                     # Broadcast immediately to all listeners
