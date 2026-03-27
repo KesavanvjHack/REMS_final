@@ -126,14 +126,7 @@ const LiveStatusPanel = ({ liveStatuses }) => {
         <div className="absolute right-0 mt-3 w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-50 overflow-hidden origin-top-right">
           <div className="flex items-center justify-between px-4 py-3 bg-slate-800/60 border-b border-slate-700/50">
             <p className="text-sm font-semibold text-slate-200">Live Team Status</p>
-            <button 
-              onClick={(e) => { e.stopPropagation(); fetchMembers(false); }} 
-              disabled={loadingList}
-              className={`text-slate-500 hover:text-indigo-400 transition-all text-xs flex items-center gap-1 ${loadingList ? 'opacity-50' : ''}`}
-            >
-              <span className={`inline-block ${loadingList ? 'animate-spin' : ''}`}>↻</span> 
-              {loadingList ? 'Refreshing...' : 'Refresh'}
-            </button>
+            <button onClick={fetchMembers} className="text-slate-500 hover:text-indigo-400 transition-colors text-xs">↻ Refresh</button>
           </div>
 
           <div className="max-h-96 overflow-y-auto divide-y divide-slate-800">

@@ -47,22 +47,22 @@ const useIdleDetection = (idleTimeMinutes = 15) => {
     }
   }, []);
 
-  const resetTimer = useCallback((triggerEvent = null) => {
+  const resetTimer = useCallback(() => {
     // Refresh session activity timestamp in AuthContext
     refreshActivity();
 
-    // ONLY resume activity if this was triggered by a REAL user event (mouse/keyboard/etc)
-    if (isIdleRef.current && triggerEvent) {
+    // If currently idle, resume activity
+    if (isIdleRef.current) {
       handleIdleStop();
     }
     
     clearTimeout(idleTimeoutRef.current);
 
-    // ONLY detect/countdown idle if user is working AND within work window
+    // ONLY detect idle if user is working AND within work window
     if (status === 'working' && isWithinWorkWindow()) {
       idleTimeoutRef.current = setTimeout(handleIdleStart, idleTimeMinutes * 60 * 1000);
     } else if (isIdleRef.current && !isWithinWorkWindow()) {
-      // If shift ended while idle, force stop idle (cleanup)
+      // If idle but shift ended, force stop idle
       handleIdleStop();
     }
   }, [idleTimeMinutes, handleIdleStart, handleIdleStop, status, isWithinWorkWindow, refreshActivity]);
@@ -92,21 +92,11 @@ const useIdleDetection = (idleTimeMinutes = 15) => {
       'touchmove',
       'MSPointerDown',
       'MSPointerMove',
-      'scroll',
-      'visibilitychange',
     ];
 
-    const handleActivity = () => {
-      resetTimer(true);
-    };
-
-    // Use window-level listeners for broader catch coverage
     events.forEach((event) => {
-      window.addEventListener(event, handleActivity, { passive: true });
+      document.addEventListener(event, resetTimer, false);
     });
-
-    // Special handling for focus as it's a key indicator of activity
-    window.addEventListener('focus', handleActivity);
 
     // Kick off the initial countdown
     resetTimer();
@@ -119,9 +109,8 @@ const useIdleDetection = (idleTimeMinutes = 15) => {
 
     return () => {
       events.forEach((event) => {
-        window.removeEventListener(event, handleActivity, { passive: true });
+        document.removeEventListener(event, resetTimer, false);
       });
-      window.removeEventListener('focus', handleActivity);
       clearTimeout(idleTimeoutRef.current);
     };
   }, [resetTimer, handleIdleStart]); // stable refs — won't loop

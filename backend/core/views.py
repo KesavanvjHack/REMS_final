@@ -399,15 +399,11 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def today(self, request):
-        """Get current user's today attendance with real-time recalculation."""
-        from .services import AttendanceService
+        """Get current user's today attendance."""
         today = date.today()
         attendance = Attendance.objects.filter(user=request.user, date=today).first()
         if not attendance:
             return Response({'detail': 'No attendance record for today.'}, status=404)
-        
-        # Ensure we return the most up-to-date real-time data
-        AttendanceService.recalculate_status(attendance)
         return Response(AttendanceSerializer(attendance).data)
 
     @action(detail=False, methods=['get'])
@@ -748,12 +744,7 @@ class TeamTimesheetView(APIView):
             member_att = att_map.get(member.id)
             
             if member_att:
-                # Ensure real-time accuracy for today's records shown to managers
-                if member_att.date == date.today():
-                    from .services import AttendanceService
-                    AttendanceService.recalculate_status(member_att)
-                
-                # Use actual attendance data
+                # Use actual attendance data (Serializer handles last_logout and hours)
                 record = AttendanceSerializer(member_att).data
                 record['user_name'] = member.full_name
                 record['user_email'] = member.email
@@ -1032,6 +1023,63 @@ class AttendancePolicyViewSet(viewsets.ModelViewSet):
         except Exception as e:
             # Don't fail the update if recalculation fails
             pass
+
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAdmin])
+    def reset_day_sessions(self, request):
+        """Administrative action to clear all work sessions and reset attendance for a specific date."""
+        date_str = request.data.get('date')
+        if not date_str:
+            return Response({'error': 'Date is required.'}, status=400)
+        
+        try:
+            from datetime import datetime
+            target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return Response({'error': 'Invalid date format. Use YYYY-MM-DD.'}, status=400)
+
+        # 1. Find all attendance for this date
+        attendances = Attendance.objects.filter(date=target_date)
+        count = attendances.count()
+
+        if count == 0:
+            return Response({'message': f'No attendance records found for {date_str}.'})
+
+        # 2. Delete all work sessions associated with these attendance records
+        # This will also delete BreakSession and IdleLog via CASCADE
+        WorkSession.objects.filter(attendance__in=attendances).delete()
+
+        # 3. Reset attendance status
+        holiday = Holiday.objects.filter(date=target_date).first()
+        new_status = Attendance.STATUS_HOLIDAY if holiday else Attendance.STATUS_ABSENT
+        remark = f"Holiday: {holiday.name}" if holiday else "Attendance reset by administrator."
+
+        attendances.update(
+            status=new_status,
+            total_work_seconds=0,
+            total_break_seconds=0,
+            total_idle_seconds=0,
+            manager_remark=remark,
+            is_flagged=False,
+            flag_reason="",
+            updated_at=timezone.now()
+        )
+
+        # 4. Log action
+        AuditService.log(
+            request.user, 'update',
+            f'Administrative reset of all attendance sessions for {date_str}',
+            request,
+            extra_data={'date': date_str, 'records_affected': count}
+        )
+
+        # 5. Broadcast status change (so users see they are clocked out)
+        StatusService.broadcast_policy_update()
+
+        return Response({
+            'status': 'success',
+            'message': f'Successfully reset {count} attendance sessions for {date_str}.'
+        })
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

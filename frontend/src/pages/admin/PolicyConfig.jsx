@@ -64,6 +64,8 @@ const PolicyConfig = () => {
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resetDate, setResetDate] = useState(new Date().toISOString().split('T')[0]);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     fetchPolicy();
@@ -95,6 +97,22 @@ const PolicyConfig = () => {
       toast.error('Failed to update policy');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!window.confirm(`Are you sure you want to RESET all attendance sessions for ${resetDate}? This action cannot be undone.`)) {
+      return;
+    }
+    
+    setResetting(true);
+    try {
+      const res = await api.post('/policy/reset_day_sessions/', { date: resetDate });
+      toast.success(res.data.message || 'Attendance sessions reset successfully');
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Failed to reset sessions');
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -233,7 +251,59 @@ const PolicyConfig = () => {
           </div>
         </form>
       </div>
+
+      {/* Administrative Controls */}
+      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 border-t-4 border-t-rose-500/50 shadow-xl mt-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-2 bg-rose-500/20 rounded-lg">
+            <svg className="h-6 w-6 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-white tracking-tight">Administrative Tools</h2>
+        </div>
+        
+        <p className="text-slate-400 text-sm mb-6 max-w-xl leading-relaxed">
+          <span className="text-rose-400 font-bold uppercase text-[10px] tracking-widest block mb-1">Danger Zone</span>
+          Resetting attendance will permanently delete all work sessions, breaks, and idle logs for all users on the selected date. This action is irreversible and should only be used for data correction.
+        </p>
+
+        <div className="flex flex-col sm:flex-row items-end gap-6">
+          <div className="flex-1 w-full max-w-xs">
+            <label className="block text-sm font-medium text-slate-300 mb-2">Target Date</label>
+            <input
+              type="date"
+              className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all outline-none"
+              value={resetDate}
+              onChange={(e) => setResetDate(e.target.value)}
+            />
+          </div>
+          <button
+            onClick={handleReset}
+            disabled={resetting}
+            className="w-full sm:w-auto h-[46px] flex items-center justify-center gap-2 bg-rose-600 hover:bg-rose-500 text-white px-8 rounded-lg font-semibold shadow-[0_0_20px_rgba(244,63,94,0.25)] hover:shadow-[0_0_25px_rgba(244,63,94,0.4)] transition-all disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5 active:translate-y-0"
+          >
+            {resetting ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Resetting...
+              </span>
+            ) : (
+              <>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+                Reset All Sessions
+              </>
+            )}
+          </button>
+        </div>
+      </div>
     </div>
+
   );
 };
 

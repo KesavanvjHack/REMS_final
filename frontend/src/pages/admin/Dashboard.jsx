@@ -6,16 +6,12 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
 } from 'recharts';
-import { 
-  UsersIcon, ClockIcon, CheckBadgeIcon, ExclamationTriangleIcon,
-  ArrowPathIcon
-} from '@heroicons/react/24/outline';
+import { UsersIcon, ClockIcon, CheckBadgeIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
 const AdminDashboard = () => {
   const [summary, setSummary] = useState(null);
   const [dailyData, setDailyData] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [todaysLeaves, setTodaysLeaves] = useState([]);
   const { policy } = useContext(AuthContext);
 
@@ -23,8 +19,7 @@ const AdminDashboard = () => {
     fetchData();
   }, []);
 
-  const fetchData = async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
+  const fetchData = async () => {
     try {
       const [sumRes, dailyRes, leavesRes] = await Promise.all([
         api.get('/reports/?type=summary'),
@@ -87,17 +82,7 @@ const AdminDashboard = () => {
 
   return (
     <div className="space-y-6 page-fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-white line-clamp-1">Organization Overview</h1>
-        <button 
-          onClick={() => fetchData(true)}
-          disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-slate-200 text-sm font-medium transition-all hover:scale-105 active:scale-95 disabled:opacity-50 shrink-0"
-        >
-          <ArrowPathIcon className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-          {refreshing ? 'Refreshing...' : 'Refresh Data'}
-        </button>
-      </div>
+      <h1 className="text-2xl font-bold tracking-tight text-white mb-6">Organization Overview</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
         <StatCard 
