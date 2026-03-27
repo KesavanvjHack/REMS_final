@@ -235,10 +235,10 @@ class AttendanceService:
             auto_remark = ""
         elif total_work_hours >= half_day_hours:
             status = attendance.STATUS_HALF_DAY
-            auto_remark = f"Hours ({total_work_hours:.2f}h) below required {min_hours}h for Present status."
-        elif total_work > 0:
-            status = attendance.STATUS_HALF_DAY if total_work_hours > 0 else attendance.STATUS_ABSENT
-            auto_remark = f"Hours ({total_work_hours:.2f}h) below threshold for Half Day."
+            auto_remark = f"Hours ({total_work_hours:.2f}h) below required {min_hours}h for Full Day/Present status."
+        elif total_work_hours > 0:
+            status = attendance.STATUS_ABSENT
+            auto_remark = f"Incomplete work: {total_work_hours:.2f}h recorded, below minimum {half_day_hours}h for Half-Day."
         else:
             status = attendance.STATUS_ABSENT
             auto_remark = "No work hours recorded."
