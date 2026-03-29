@@ -285,25 +285,33 @@ class AttendanceService:
             return 0
             
         now_local = timezone.localtime(timezone.now())
-        today = now_local.date()
         
-        # Combine date and time for comparison
-        shift_end_dt = timezone.make_aware(datetime.datetime.combine(today, policy.shift_end_time))
-        
-        if now_local < shift_end_dt:
-            return 0 # Shift hasn't ended yet
-            
-        open_sessions = WorkSession.objects.filter(
+        # 1. Handle Past Days: Find ALL open sessions where attendance date < today
+        past_open_sessions = WorkSession.objects.filter(
             end_time__isnull=True,
-            attendance__date=today
+            attendance__date__lt=now_local.date()
         ).select_related('attendance__user')
         
         count = 0
-        for session in open_sessions:
-            # Close session at exactly shift_end_time if it started before that
-            close_time = shift_end_dt
-            WorkSessionService.stop_session(session.attendance.user, end_time=close_time, is_auto=True)
+        for session in past_open_sessions:
+            # For past sessions, we close them at the shift_end_time of THAT SPECIFIC DAY
+            session_date = session.attendance.date
+            close_time = timezone.make_aware(datetime.datetime.combine(session_date, policy.shift_end_time))
+            WorkSessionService.stop_session(session.attendance.user, end_time=close_time, is_auto=True, session=session)
             count += 1
+
+        # 2. Handle Today: Find open sessions for today if shift end time has passed
+        shift_end_dt_today = timezone.make_aware(datetime.datetime.combine(now_local.date(), policy.shift_end_time))
+        
+        if now_local >= shift_end_dt_today:
+            today_open_sessions = WorkSession.objects.filter(
+                end_time__isnull=True,
+                attendance__date=now_local.date()
+            ).select_related('attendance__user')
+            
+            for session in today_open_sessions:
+                WorkSessionService.stop_session(session.attendance.user, end_time=shift_end_dt_today, is_auto=True, session=session)
+                count += 1
             
         return count
 
@@ -401,21 +409,26 @@ class WorkSessionService:
 
     @staticmethod
     @transaction.atomic
-    def stop_session(user, end_time=None, is_auto=False):
+    def stop_session(user, end_time=None, is_auto=False, session=None):
         """Stop the active work session and recalculate status."""
         from .models import WorkSession, Attendance
 
-        attendance, _ = AttendanceService.get_or_create_today(user)
-        # Sequence lock on parent attendance to prevent double-click creation races
-        Attendance.objects.select_for_update().get(id=attendance.id)
-
-        open_session = WorkSession.objects.filter(
-            attendance=attendance,
-            end_time__isnull=True
-        ).first()
+        if session:
+            open_session = session
+        else:
+            # Find the open session for this user. 
+            # If there are multiple (which shouldn't happen), we pick the oldest one.
+            open_session = WorkSession.objects.filter(
+                attendance__user=user,
+                end_time__isnull=True
+            ).order_by('start_time').first()
 
         if not open_session:
             return None, False
+
+        attendance = open_session.attendance
+        # Sequence lock on parent attendance to prevent double-click creation races
+        Attendance.objects.select_for_update().get(id=attendance.id)
 
         # Capping Logic: If not admin, cap end_time to shift_end_time if it has passed
         stop_time = end_time if end_time else timezone.now()
@@ -425,11 +438,19 @@ class WorkSessionService:
             import datetime
             policy = AttendancePolicy.objects.filter(is_active=True).first()
             if policy:
-                now_local = timezone.localtime(stop_time)
-                shift_end_dt = timezone.make_aware(datetime.datetime.combine(now_local.date(), policy.shift_end_time))
-                if now_local > shift_end_dt:
+                # Use the date of the attendance record, not necessarily 'today'
+                # to handle sessions that were left open from previous days.
+                session_date = attendance.date
+                shift_end_dt = timezone.make_aware(datetime.datetime.combine(session_date, policy.shift_end_time))
+                
+                if stop_time > shift_end_dt:
                     stop_time = shift_end_dt
                     is_auto = True # Mark as auto if we capped it
+
+        # Ensure stop_time is NOT before start_time to prevent negative duration
+        if stop_time < open_session.start_time:
+            stop_time = open_session.start_time
+            is_auto = True
 
         # Also close any open break
         open_break = open_session.break_sessions.filter(end_time__isnull=True).first()
