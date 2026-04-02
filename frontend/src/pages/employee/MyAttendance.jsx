@@ -104,16 +104,21 @@ const MyAttendance = () => {
     }
 
     const headers = ['Date', 'Status', 'Work Hours', 'Break (Hours)', 'Idle (Hours)', 'Flags'];
-    const csvContent = [
-      headers.join(','),
-      ...rawData.map(rec => [
+    const csvData = rawData.map(rec => [
          format(new Date(rec.date), 'yyyy-MM-dd'),
          rec.status,
          formatDecimalHours(rec.total_work_seconds),
          formatDecimalHours(rec.total_break_seconds),
          formatDecimalHours(rec.total_idle_seconds),
          rec.is_flagged ? `Flagged: ${rec.flag_reason}` : (rec.manager_remark || 'None')
-      ].map(v => `"${v}"`).join(','))
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => row.map(r => {
+        const val = r === undefined || r === null ? '' : String(r);
+        return `"${val.replace(/"/g, '""')}"`;
+      }).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

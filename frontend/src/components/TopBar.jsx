@@ -19,7 +19,7 @@ const STATUS_META = {
   offline:  { label: 'Offline',  dot: 'bg-slate-500',   text: 'text-slate-500' },
 };
 
-const LiveStatusPanel = ({ liveStatuses }) => {
+const LiveStatusPanel = ({ liveStatuses, user }) => {
   const [open, setOpen]           = useState(false);
   const [members, setMembers]     = useState([]);
   const [loadingList, setLoading] = useState(false);
@@ -56,19 +56,25 @@ const LiveStatusPanel = ({ liveStatuses }) => {
     return () => clearInterval(interval);
   }, [open]);
 
-  // Merge websocket statuses into members array for the most accurate counting
+  // Merge websocket statuses and apply role-based filtering for managers
   const mergedMembers = useMemo(() => {
-    return members.map(m => {
+    let list = members.map(m => {
       const wsStatus = liveStatuses[m.user_id] || liveStatuses[m.id];
       return {
         ...m,
         status: wsStatus || m.status
       };
     });
-  }, [members, liveStatuses]);
 
-  // Calculate counts off the merged members array ensuring we don't miss Admins 
-  // or people who haven't had a WS event yet.
+    // If logged-in user is a manager, only show employees
+    if (user?.role === 'manager') {
+      list = list.filter(m => m.role === 'employee' || m.user_role === 'employee');
+    }
+
+    return list;
+  }, [members, liveStatuses, user]);
+
+  // Calculate counts off the filtered merged members array
   const counts = useMemo(() => {
     return {
       working:  mergedMembers.filter(m => m.status === 'working').length,
@@ -304,7 +310,7 @@ const TopBar = () => {
       <div className="flex items-center gap-4">
         {/* Persistent live team status — only visible to admin or manager */}
         {user && (user.role === 'admin' || user.role === 'manager') && (
-          <LiveStatusPanel liveStatuses={liveStatuses} />
+          <LiveStatusPanel liveStatuses={liveStatuses} user={user} />
         )}
 
         <StatusBadge status={currentStatus} />

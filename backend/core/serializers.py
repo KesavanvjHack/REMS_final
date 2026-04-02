@@ -41,6 +41,7 @@ class UserListSerializer(serializers.ModelSerializer):
             'id', 'email', 'first_name', 'last_name', 'full_name',
             'role', 'department', 'department_name',
             'manager', 'manager_name', 'phone', 'is_active',
+            'is_online', 'last_seen',
             'date_joined', 'created_at',
         ]
         read_only_fields = ['id', 'full_name', 'date_joined', 'created_at']
@@ -59,6 +60,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
             'id', 'email', 'first_name', 'last_name', 'full_name',
             'role', 'department', 'department_name',
             'manager', 'manager_name', 'phone', 'is_active',
+            'is_online', 'last_seen',
             'date_joined', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'full_name', 'date_joined', 'created_at', 'updated_at']

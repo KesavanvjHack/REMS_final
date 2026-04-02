@@ -110,9 +110,7 @@ const TeamAttendance = () => {
     }
 
     const headers = ['Date', 'Employee Name', 'Email', 'Login Time', 'Last Logout', 'Attendance Status', 'Work Hours', 'Break (Hours)', 'Idle (Hours)', 'Anomalies', 'Remarks / Reason'];
-    const csvContent = [
-      headers.join(','),
-      ...rawData.map(rec => [
+    const csvData = rawData.map(rec => [
          format(new Date(rec.date), 'yyyy-MM-dd'),
          rec.user_name,
          rec.user_email,
@@ -124,7 +122,14 @@ const TeamAttendance = () => {
          formatDecimalHours(rec.total_idle_seconds),
          rec.is_flagged ? `Yes - ${rec.flag_reason}` : 'No',
          rec.manager_remark || rec.flag_reason || '-'
-      ].map(v => `"${v}"`).join(','))
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...csvData.map(row => row.map(r => {
+        const val = r === undefined || r === null ? '' : String(r);
+        return `"${val.replace(/"/g, '""')}"`;
+      }).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -146,7 +151,9 @@ const TeamAttendance = () => {
   );
 
   // Extract unique employees from attendance data
-  const uniqueEmployees = Array.from(new Set(attendance.map(a => a.user_name))).filter(Boolean).sort();  return (
+  const uniqueEmployees = Array.from(new Set(attendance.map(a => a.user_name))).filter(Boolean).sort();
+  
+  return (
     <div className="space-y-6 page-fade-in">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between xl:items-start gap-4 mb-6">
@@ -162,7 +169,7 @@ const TeamAttendance = () => {
               </span>
             )}
             <p className="text-xs text-slate-500 mt-0.5">
-              Showing your direct reports • Live status • Updated every 0.1s
+              Showing your direct reports • Live status • Updated every 1.0m
             </p>
           </div>
         </div>
@@ -188,7 +195,7 @@ const TeamAttendance = () => {
               onChange={(e) => setExportEmployee(e.target.value)}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
             >
-              <option value="all">All Employees</option>
+              <option value="all">All Personnel</option>
               {uniqueEmployees.map(empName => (
                 <option key={empName} value={empName}>{empName}</option>
               ))}
@@ -238,7 +245,7 @@ const TeamAttendance = () => {
             <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
               <tr>
                 <th className="px-3 py-4 font-semibold tracking-wider text-xs">Date</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-xs text-left">Employee</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-xs text-left">Team Member</th>
                 <th className="px-3 py-4 font-semibold tracking-wider text-center text-xs">Login Time</th>
                 <th className="px-3 py-4 font-semibold tracking-wider text-center hidden lg:table-cell text-xs">Last Logout</th>
                 <th className="px-3 py-4 font-semibold tracking-wider text-center text-xs">Attendance</th>

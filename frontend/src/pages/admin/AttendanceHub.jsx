@@ -138,7 +138,10 @@ const AttendanceHub = () => {
 
     const csvContent = [
       headers.join(','),
-      ...csvData.map(row => row.map(r => `"${r}"`).join(','))
+      ...csvData.map(row => row.map(r => {
+        const val = r === undefined || r === null ? '' : String(r);
+        return `"${val.replace(/"/g, '""')}"`;
+      }).join(','))
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

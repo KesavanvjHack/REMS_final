@@ -139,6 +139,14 @@ class RegisterProfileView(APIView):
         # Invalidate OTP
         record.delete()
         
+        # Notify Admins about new registration
+        NotificationService.notify_based_on_role(
+            user,
+            "New User Registered",
+            f"A new user {user.full_name} ({user.email}) has registered and is awaiting assignment.",
+            "system"
+        )
+        
         return Response({'detail': 'Registration complete. You can now log in.'}, status=status.HTTP_201_CREATED)
 
 
@@ -300,6 +308,61 @@ class UserViewSet(viewsets.ModelViewSet):
                 Q(manager=user) | Q(id=user.id)
             ).select_related('department', 'manager')
         return super().get_queryset()
+
+    def perform_create(self, serializer):
+        user = serializer.save()
+        # Notify superiors (Manager & Admins) about the new user
+        NotificationService.notify_based_on_role(
+            user, 
+            "New User Created", 
+            f"Admin {self.request.user.full_name} has created a new user profile for {user.full_name} ({user.role}).",
+            "system",
+            sender=self.request.user if self.request.user.is_authenticated else user
+        )
+
+    def perform_update(self, serializer):
+        instance = self.get_object()
+        old_manager = instance.manager
+        old_active = instance.is_active
+        user = serializer.save()
+        
+        # 1. Notify on Manager Assignment
+        if user.manager and user.manager != old_manager:
+            NotificationService.notify_based_on_role(
+                user,
+                "New Team Member Assigned",
+                f"User {user.full_name} has been assigned to your team.",
+                "system",
+                sender=self.request.user
+            )
+        
+        # 2. Notify on Deactivation
+        if old_active and not user.is_active:
+            if user.manager:
+                NotificationService._send_notifications(
+                    self.request.user,
+                    [user.manager],
+                    "Team Member Deactivated",
+                    f"User {user.full_name} has been deactivated by an administrator.",
+                    "system"
+                )
+
+    def perform_destroy(self, instance):
+        manager = instance.manager
+        user_name = instance.full_name
+        admin_name = self.request.user.full_name
+        
+        # We notify BEFORE deletion so we still have the object context if needed, 
+        # though here we just need the manager reference.
+        if manager:
+            NotificationService._send_notifications(
+                self.request.user,
+                [manager],
+                "Team Member Removed",
+                f"User {user_name} has been permanently removed from the system by Admin {admin_name}.",
+                "system"
+            )
+        instance.delete()
 
     @action(detail=True, methods=['post'], permission_classes=[IsAdmin])
     def reset_password(self, request, pk=None):
@@ -679,8 +742,9 @@ class TeamStatusView(APIView):
                 role__in=['manager', 'employee']
             ).select_related('department', 'manager')
         elif user.role == 'manager':
-            # Managers see ONLY their subordinates for strict isolation
-            subordinate_ids = user.subordinates.values_list('id', flat=True)
+            # Managers see their subordinates PLUS themselves (to see their own status on the same page)
+            subordinate_ids = list(user.subordinates.values_list('id', flat=True))
+            subordinate_ids.append(user.id)
             team = User.objects.filter(
                 id__in=subordinate_ids,
                 is_active=True
@@ -716,10 +780,13 @@ class TeamTimesheetView(APIView):
         
         # Managers should only see their subordinates. Admins see all employees.
         if user.role == 'manager':
-            subordinate_ids = user.subordinates.values_list('id', flat=True)
+            subordinate_ids = list(user.subordinates.values_list('id', flat=True))
+            # Include the manager themselves in their team timesheet
+            subordinate_ids.append(user.id)
             team = User.objects.filter(id__in=subordinate_ids, is_active=True).select_related('department')
         else:
-            team = User.objects.filter(is_active=True, role='employee').select_related('department')
+            # Admins see all staff (Managers and Employees)
+            team = User.objects.filter(is_active=True, role__in=['manager', 'employee']).select_related('department')
 
         # 2. Get today's actual attendance records for these employees
         today = date.today()
@@ -908,7 +975,8 @@ class TeamListView(APIView):
         if user.role == 'manager':
             team = user.subordinates.filter(is_active=True)
         else:
-            team = User.objects.filter(role='employee', is_active=True)
+            # Admins see all productive staff (Managers and Employees)
+            team = User.objects.filter(role__in=['manager', 'employee'], is_active=True)
         data = [{'id': m.id, 'full_name': m.full_name, 'email': m.email} for m in team]
         return Response(data)
 
@@ -1154,8 +1222,10 @@ class ReportView(APIView):
             user = request.user
             if user.role == 'manager':
                 subordinate_ids = list(user.subordinates.values_list('id', flat=True))
+                # Optionally include self in charts? Dashboard usually shows team. We'll stick to subordinates for charts.
             else:
-                subordinate_ids = list(User.objects.values_list('id', flat=True))
+                # Admins see all Managers and Employees in charts, but NOT other admins
+                subordinate_ids = list(User.objects.filter(role__in=['manager', 'employee']).values_list('id', flat=True))
             data = []
             for uid in subordinate_ids:
                 try:
@@ -1207,39 +1277,67 @@ class ExportView(APIView):
     permission_classes = [IsManager] # Admin/Manager can export
 
     def get(self, request):
-        print("EXPORT VIEW HIT!!!")
+        from datetime import date, datetime, time
         export_type = request.query_params.get('type', 'attendance')
         file_format = request.query_params.get('export_format', 'csv')
-        from_date = request.query_params.get('from_date')
-        to_date = request.query_params.get('to_date')
+        
+        # Support both 'from_date' and 'date__gte' for frontend consistency
+        raw_from = request.query_params.get('from_date') or request.query_params.get('date__gte')
+        raw_to = request.query_params.get('to_date') or request.query_params.get('date__lte')
+        
+        # Robust Datetime Range Parsing: 
+        # Create full datetime objects for the start and end of the specified range.
+        # This is more reliable than __date filtering on some database engines.
+        start_dt = None
+        end_dt = None
+        try:
+            if raw_from: 
+                start_dt = datetime.combine(date.fromisoformat(raw_from), time.min)
+            if raw_to: 
+                end_dt = datetime.combine(date.fromisoformat(raw_to), time.max)
+        except (ValueError, TypeError):
+            pass
 
-        AuditService.log(request.user, 'export', f'Exported {export_type} as {file_format}', request)
+        AuditService.log(request.user, 'export', f'Exported {export_type} as {file_format} (Range: {raw_from} to {raw_to})', request)
 
         if export_type == 'attendance':
-            return self._export_attendance(request, from_date, to_date, file_format)
+            return self._export_attendance(request, start_dt, end_dt, file_format)
         elif export_type == 'leave':
-            return self._export_leave(request, from_date, to_date, file_format)
+            # Note: _export_leave handles its own parsing internally for gap detection,
+            # but we pass raw strings or objects if needed.
+            return self._export_leave(request, raw_from, raw_to, file_format)
         elif export_type == 'audit':
-            if request.user.role not in ['admin', 'manager']:
-                return Response({'detail': 'Unauthorized.'}, status=403)
-            return self._export_audit(request, from_date, to_date, file_format)
+            return self._export_audit(request, start_dt, end_dt, file_format)
         elif export_type == 'payroll':
-            if request.user.role not in ['admin', 'manager']:
-                return Response({'detail': 'Unauthorized.'}, status=403)
             return self._export_payroll(request, file_format)
+        elif export_type == 'holiday':
+            return self._export_holiday(request, file_format)
         else:
             return Response({'detail': 'Invalid export type.'}, status=400)
 
-    def _export_attendance(self, request, from_date, to_date, file_format):
+    def _export_attendance(self, request, start_dt, end_dt, file_format):
         from django.http import HttpResponse
         qs = Attendance.objects.select_related('user', 'user__department').all()
         if request.user.role == 'manager':
-            subordinate_ids = request.user.subordinates.values_list('id', flat=True)
-            qs = qs.filter(user__in=subordinate_ids)
-        if from_date:
-            qs = qs.filter(date__gte=from_date)
-        if to_date:
-            qs = qs.filter(date__lte=to_date)
+            subordinate_ids = list(request.user.subordinates.values_list('id', flat=True))
+            # Managers should see their own data + subordinates in exports
+            qs = qs.filter(Q(user=request.user) | Q(user_id__in=subordinate_ids))
+
+        category = request.query_params.get('category')
+        user_id = request.query_params.get('user_id')
+
+        if category == 'employees':
+            qs = qs.filter(user__role='employee')
+        elif category == 'managers':
+            qs = qs.filter(user__role='manager')
+        elif category == 'particular_employee' and user_id:
+            qs = qs.filter(user_id=user_id)
+
+        # Filters using date or full datetime for precision
+        if start_dt:
+            qs = qs.filter(date__gte=start_dt.date())
+        if end_dt:
+            qs = qs.filter(date__lte=end_dt.date())
 
         if file_format == 'xlsx':
             return self._to_xlsx(
@@ -1279,58 +1377,172 @@ class ExportView(APIView):
         return response
 
     def _export_leave(self, request, from_date, to_date, file_format):
+        """
+        Export leave data including formal requests AND attendance-based absences.
+        This ensures the export matches what admins see in the 'Today's Leaves' table.
+        """
         from django.http import HttpResponse
-        qs = LeaveRequest.objects.select_related('employee', 'reviewed_by').all()
-        
+        from .models import User, LeaveRequest, Attendance, Holiday
+        from datetime import timedelta, date, datetime
+
+        # 1. Standardize date range
+        try:
+            start_date = date.fromisoformat(from_date) if from_date else date.today() - timedelta(days=7)
+            end_date = date.fromisoformat(to_date) if to_date else date.today()
+        except ValueError:
+            start_date = date.today() - timedelta(days=7)
+            end_date = date.today()
+
+        # 2. Filter users based on category
         category = request.query_params.get('category')
         user_id = request.query_params.get('user_id')
-
+        
+        users = User.objects.filter(is_active=True).exclude(role='admin')
         if request.user.role == 'manager':
-            subordinate_ids = request.user.subordinates.values_list('id', flat=True)
-            qs = qs.filter(employee__in=subordinate_ids)
-
-        if category == 'employees':
-            qs = qs.filter(employee__role='employee')
-        elif category == 'managers':
-            qs = qs.filter(employee__role='manager')
-        elif category == 'particular_employee' and user_id:
-            qs = qs.filter(employee_id=user_id)
+            subordinate_ids = list(request.user.subordinates.values_list('id', flat=True))
+            users = users.filter(Q(id=request.user.id) | Q(id__in=subordinate_ids))
             
-        if from_date:
-            qs = qs.filter(to_date__gte=from_date) # Leaves ending on or after from_date
-        if to_date:
-            qs = qs.filter(from_date__lte=to_date) # Leaves starting on or before to_date
+        if category == 'employees':
+            users = users.filter(role='employee')
+        elif category == 'managers':
+            users = users.filter(role='manager')
+        elif category == 'particular_employee' and user_id:
+            users = users.filter(id=user_id)
+            
+        users = users.distinct()
+
+        # 3. Pre-fetch all necessary data to avoid N+1 queries during loop
+        leaves = LeaveRequest.objects.filter(
+            employee__in=users,
+            from_date__lte=end_date,
+            to_date__gte=start_date
+        ).select_related('employee', 'reviewed_by')
+        
+        attendances = Attendance.objects.filter(
+            user__in=users,
+            date__gte=start_date,
+            date__lte=end_date
+        ).select_related('user')
+        
+        holidays = Holiday.objects.filter(date__gte=start_date, date__lte=end_date)
+        holiday_dates = {h.date: h.name for h in holidays}
+        
+        # Index data for fast O(1) lookups
+        att_map = {(a.user_id, a.date): a for a in attendances}
+        leaf_map = {}
+        for l in leaves:
+            if l.employee_id not in leaf_map: leaf_map[l.employee_id] = []
+            leaf_map[l.employee_id].append(l)
+
+        report_rows = []
+        today = date.today()
+
+        # 4. Generate rows date-by-date (Gap Detection)
+        curr = start_date
+        while curr <= end_date:
+            is_holiday = curr in holiday_dates
+            for u in users:
+                # Priority 1: Formal Leave Request
+                user_leaves = leaf_map.get(u.id, [])
+                matching_leaf = next((l for l in user_leaves if l.from_date <= curr <= l.to_date), None)
+                
+                if matching_leaf:
+                    report_rows.append({
+                        'date': curr,
+                        'name': u.full_name,
+                        'email': u.email,
+                        'type': matching_leaf.leave_type,
+                        'from': matching_leaf.from_date,
+                        'to': matching_leaf.to_date,
+                        'days': matching_leaf.duration_days,
+                        'status': matching_leaf.status.upper(),
+                        'reason': matching_leaf.reason,
+                        'reviewed_by': matching_leaf.reviewed_by.full_name if matching_leaf.reviewed_by else '',
+                    })
+                    continue
+                
+                # Priority 2: System-detected Absence (Not present and not on holiday)
+                if not is_holiday:
+                    att = att_map.get((u.id, curr))
+                    # NO record usually means absent. (Unless we want to exclude future dates)
+                    # We only report absences for today or past days.
+                    if curr <= today:
+                        is_absent = False
+                        reason = "No attendance record found"
+                        
+                        if not att:
+                            is_absent = True
+                        elif att.status == 'absent':
+                            is_absent = True
+                            reason = att.manager_remark or "Marked absent by system"
+
+                        if is_absent:
+                            report_rows.append({
+                                'date': curr,
+                                'name': u.full_name,
+                                'email': u.email,
+                                'type': 'Unplanned Absence',
+                                'from': curr,
+                                'to': curr,
+                                'days': 1,
+                                'status': 'ABSENT',
+                                'reason': reason,
+                                'reviewed_by': 'System',
+                            })
+            curr += timedelta(days=1)
+
+        # Sort: Latest date first, then by name
+        report_rows.sort(key=lambda x: (x['date'], x['name']), reverse=True)
 
         if file_format == 'xlsx':
             return self._to_xlsx(
-                qs,
-                ['Employee', 'Email', 'Type', 'From', 'To', 'Days', 'Status', 'Reason', 'Reviewed By'],
-                lambda l: [
-                    l.employee.full_name, l.employee.email,
-                    l.leave_type, str(l.from_date), str(l.to_date),
-                    l.duration_days, l.status, l.reason,
-                    l.reviewed_by.full_name if l.reviewed_by else '',
+                report_rows,
+                ['Date', 'Employee', 'Email', 'Type', 'From', 'To', 'Days', 'Status', 'Reason', 'Reviewed By'],
+                lambda row: [
+                    str(row['date']), row['name'], row['email'], row['type'],
+                    str(row['from']), str(row['to']), row['days'], row['status'],
+                    row['reason'], row['reviewed_by']
                 ],
                 'leave_export.xlsx'
             )
 
+        # CSV Export
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="leave_export.csv"'
         writer = csv.writer(response)
-        writer.writerow(['Employee', 'Email', 'Type', 'From', 'To', 'Days', 'Status', 'Reason', 'Reviewed By'])
-        for l in qs:
+        writer.writerow(['Date', 'Employee', 'Email', 'Type', 'From', 'To', 'Days', 'Status', 'Reason', 'Reviewed By'])
+        for row in report_rows:
             writer.writerow([
-                l.employee.full_name, l.employee.email,
-                l.leave_type, str(l.from_date), str(l.to_date),
-                l.duration_days, l.status, l.reason,
-                l.reviewed_by.full_name if l.reviewed_by else '',
+                str(row['date']), row['name'], row['email'], row['type'],
+                str(row['from']), str(row['to']), row['days'], row['status'],
+                row['reason'], row['reviewed_by']
             ])
         return response
 
-    def _export_audit(self, request, from_date, to_date, file_format):
+    def _export_holiday(self, request, file_format):
+        from django.http import HttpResponse
+        qs = Holiday.objects.all().order_by('date')
+        
+        if file_format == 'xlsx':
+            return self._to_xlsx(
+                qs,
+                ['Name', 'Date', 'Description'],
+                lambda h: [h.name, str(h.date), h.description],
+                'holidays_export.xlsx'
+            )
+
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="holidays_export.csv"'
+        writer = csv.writer(response)
+        writer.writerow(['Name', 'Date', 'Description'])
+        for h in qs:
+            writer.writerow([h.name, str(h.date), h.description])
+        return response
+
+    def _export_audit(self, request, start_dt, end_dt, file_format):
         import csv
         from django.http import HttpResponse
-        qs = AuditLog.objects.select_related('user').all()
+        qs = AuditLog.objects.select_related('user').all().order_by('-timestamp')
 
         if request.user.role == 'manager':
             subordinate_ids = request.user.subordinates.values_list('id', flat=True)
@@ -1346,10 +1558,10 @@ class ExportView(APIView):
         elif category == 'particular_employee' and user_id:
             qs = qs.filter(user_id=user_id)
             
-        if from_date:
-            qs = qs.filter(timestamp__date__gte=from_date)
-        if to_date:
-            qs = qs.filter(timestamp__date__lte=to_date)
+        if start_dt:
+            qs = qs.filter(timestamp__gte=start_dt)
+        if end_dt:
+            qs = qs.filter(timestamp__lte=end_dt)
 
         if file_format == 'xlsx':
             return self._to_xlsx(

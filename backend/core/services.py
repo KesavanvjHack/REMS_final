@@ -63,54 +63,33 @@ class NotificationService:
             )
 
     @staticmethod
-    def notify_based_on_role(sender, title, message, notif_type='system'):
-        """
-        Role-aware notification dispatcher:
-        - employee -> notify managers + admins
-        - manager  -> notify admins only
-        - admin    -> notify admins (other admins)
-        """
-        from .models import User
-        if sender.role == 'employee':
-            recipients = User.objects.filter(role__in=['admin', 'manager']).exclude(id=sender.id).distinct()
-        else:
-            # manager or admin: only notify admins
-            recipients = User.objects.filter(role='admin').exclude(id=sender.id).distinct()
-        NotificationService._send_notifications(sender, recipients, title, message, notif_type)
-
-    @staticmethod
-    def notify_managers_and_admins(sender, title, message, notif_type='system'):
-        """Legacy helper – kept for leave/task notifications. Notifies managers + admins."""
-        from .models import User
-        recipients = User.objects.filter(role__in=['admin', 'manager']).exclude(id=sender.id).distinct()
-        NotificationService._send_notifications(sender, recipients, title, message, notif_type)
-
-    @staticmethod
-    def notify_all_active_users(sender, title, message, notif_type='system'):
-        """Broadcast a notification to all active users in the system."""
-        from .models import User
-        recipients = User.objects.filter(is_active=True).exclude(id=sender.id).distinct()
-        NotificationService._send_notifications(sender, recipients, title, message, notif_type)
-
-    @staticmethod
-    def notify_based_on_role(user, title, message, notif_type='system'):
+    def notify_based_on_role(user, title, message, notif_type='system', sender=None):
         """
         Notify appropriate superiors based on the user's role:
         - Employee -> Manager & Admins
         - Manager -> Admins
+        Args:
+            user: The user whose superiors should be notified.
+            title: notification title
+            message: notification message
+            notif_type: 'system', 'status', etc.
+            sender: The user who triggered the notification (defaults to 'user' if not provided).
         """
         from .models import User
+        if sender is None:
+            sender = user
+
         if user.role == 'employee':
             recipients = User.objects.filter(
                 Q(id=user.manager_id) | Q(role='admin')
-            ).exclude(id__isnull=True).distinct()
+            ).exclude(id=sender.id).distinct()
         elif user.role == 'manager':
-            recipients = User.objects.filter(role='admin').distinct()
+            recipients = User.objects.filter(role='admin').exclude(id=sender.id).distinct()
         else:
             recipients = User.objects.none()
             
         if recipients.exists():
-            NotificationService._send_notifications(user, recipients, title, message, notif_type)
+            NotificationService._send_notifications(sender, recipients, title, message, notif_type)
 
     @staticmethod
     def notify_shift_event(user, title, message, notif_type='status'):
@@ -142,6 +121,29 @@ class NotificationService:
         message = f"Admin {admin_user.full_name} has updated the attendance status for {employee.full_name} on {date_str} to '{new_status}'."
         
         NotificationService._send_notifications(admin_user, recipients, title, message, 'system')
+
+    @staticmethod
+    def notify_all_active_users(sender, title, message, notif_type='system'):
+        """
+        Notify all active users in the system (e.g. for global policy changes).
+        """
+        from .models import User
+        recipients = User.objects.filter(is_active=True).exclude(id=sender.id)
+        if recipients.exists():
+            NotificationService._send_notifications(sender, recipients, title, message, notif_type)
+
+    @staticmethod
+    def notify_managers_and_admins(sender, title, message, notif_type='system'):
+        """
+        Notify all managers and administrators in the system.
+        """
+        from .models import User
+        recipients = User.objects.filter(
+            role__in=['manager', 'admin'], 
+            is_active=True
+        ).exclude(id=sender.id).distinct()
+        if recipients.exists():
+            NotificationService._send_notifications(sender, recipients, title, message, notif_type)
 
 # ── Attendance Engine ──────────────────────────────────────────────────────────
 
@@ -807,7 +809,19 @@ class ReportService:
         now_ist = timezone.now().astimezone(ist)
         is_before_cutoff = now_ist.time() < shift_end
 
-        total = qs.count()
+        from .models import User
+        
+        # Calculate real team composition based on active users, not just attendance records
+        user_qs = User.objects.filter(is_active=True)
+        if user_ids is not None:
+             user_qs = user_qs.filter(id__in=user_ids)
+        else:
+             # Admin view: only count those that SHOULD be attending (employees/managers)
+             user_qs = user_qs.filter(role__in=['manager', 'employee'])
+        
+        actual_user_count = user_qs.count()
+
+        total_records = qs.count()
         present = qs.filter(status='present').count()
         half_day = qs.filter(status='half_day').count()
         on_leave = qs.filter(status='on_leave').count()
@@ -815,41 +829,43 @@ class ReportService:
         # Absent logic: only count as absent if it's NOT today or if cutoff passed
         absent_qs = qs.filter(status='absent')
         if is_before_cutoff:
-            # Exclude today's absents from the final "Absent" count if shift hasn't ended
             final_absent = absent_qs.exclude(date=today).count()
             calculating = absent_qs.filter(date=today).count()
         else:
             final_absent = absent_qs.count()
             calculating = 0
+            
+        # If today, some people might be missing attendance entirely
+        # (They haven't logged in, and no dummy record created yet)
+        if (not from_date or from_date <= today) and (not to_date or to_date >= today):
+            missing_today = max(0, actual_user_count - (total_records if total_records > 0 else 0))
+            if is_before_cutoff:
+                calculating += missing_today
+            else:
+                final_absent += missing_today
 
         absent = final_absent
-
         avg_work = qs.aggregate(avg=Sum('total_work_seconds'))['avg'] or 0
         avg_idle = qs.aggregate(avg=Sum('total_idle_seconds'))['avg'] or 0
 
-        # Calculate Productivity Score (Average over the days/users)
-        # Avoid iterating through thousands of records for global summaries (Admin overview)
-        # only calculate if we have a manageable number of records (< 200) or specific user filters
         total_score = 0
         scored_days = 0
-        
-        if total < 200:
+        if total_records < 200:
             for d_att in qs.select_related('user'):
                 total_score += ProductivityScoringService.calculate_score(d_att.user, d_att.date)
                 scored_days += 1
-                
         avg_productivity_score = round(total_score / scored_days) if scored_days > 0 else 0
 
         return {
-            'total': total,
+            'total': actual_user_count,
             'present': present,
             'half_day': half_day,
             'absent': absent,
             'calculating': calculating,
             'on_leave': on_leave,
-            'attendance_rate': round(present / total * 100, 1) if total > 0 else 0,
-            'avg_work_hours': round(avg_work / 3600, 2) if total > 0 else 0,
-            'avg_idle_hours': round(avg_idle / 3600, 2) if total > 0 else 0,
+            'attendance_rate': round(present / actual_user_count * 100, 1) if actual_user_count > 0 else 0,
+            'avg_work_hours': round(avg_work / 3600, 2) if total_records > 0 else 0,
+            'avg_idle_hours': round(avg_idle / 3600, 2) if total_records > 0 else 0,
             'productivity_score': avg_productivity_score,
         }
 
