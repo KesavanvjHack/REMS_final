@@ -34,11 +34,11 @@ const ManagerDashboard = () => {
     return (
       <div className="space-y-6 page-fade-in">
         <h1 className="text-2xl font-bold tracking-tight text-white mb-6">Manager Dashboard</h1>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
           {[...Array(5)].map((_, i) => (
             <div key={i} className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl flex items-center gap-4">
-              <div className="p-4 rounded-xl bg-slate-700 w-16 h-16 skeleton-pulse"></div>
-              <div className="space-y-2">
+              <div className="p-4 rounded-xl bg-slate-700 w-16 h-16 skeleton-pulse shrink-0"></div>
+              <div className="space-y-2 flex-1 min-w-0">
                 <div className="h-4 w-24 bg-slate-700 rounded skeleton-pulse"></div>
                 <div className="h-8 w-16 bg-slate-700 rounded skeleton-pulse"></div>
               </div>
@@ -66,7 +66,7 @@ const ManagerDashboard = () => {
     <div className="space-y-6 page-fade-in">
       <h1 className="text-2xl font-bold tracking-tight text-white mb-6">Manager Dashboard</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
         <StatCard 
           title="Team Members Recorded" 
           value={summary?.total || 0} 
@@ -101,9 +101,9 @@ const ManagerDashboard = () => {
 
       <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl mt-8">
         <h2 className="text-lg font-semibold text-white mb-6">Team Productivity Overview</h2>
-        <div className="h-96 w-full">
-          <ResponsiveContainer>
-            <BarChart data={teamStats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+        <div className="h-[400px] w-full min-w-0" style={{ position: 'relative' }}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300} debounce={50}>
+            <BarChart data={teamStats} margin={{ top: 20, right: 30, left: 10, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
               <XAxis dataKey="user_name" stroke="#94a3b8" />
               <YAxis yAxisId="left" stroke="#10b981" />

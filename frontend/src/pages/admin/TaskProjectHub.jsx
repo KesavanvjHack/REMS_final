@@ -100,20 +100,20 @@ const TaskProjectHub = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-100 flex items-center gap-2">
             <RectangleGroupIcon className="h-6 w-6 text-indigo-400" />
             Task & Project Hub
           </h2>
-          <p className="text-slate-400 mt-1">Manage all organization projects and track task distributions.</p>
+          <p className="text-slate-400 mt-1 text-sm">Manage all organization projects and track task distributions.</p>
         </div>
         <button 
           onClick={() => openModal('create')}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-colors"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-colors whitespace-nowrap w-full sm:w-auto font-medium shadow-lg shadow-indigo-500/20"
         >
           <PlusIcon className="h-5 w-5" />
-          New Project
+          <span>New Project</span>
         </button>
       </div>
 
@@ -203,9 +203,10 @@ const TaskProjectHub = () => {
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Project Name *</label>
+                <label htmlFor="projectName" className="block text-sm font-medium text-slate-300 mb-1">Project Name *</label>
                 <input 
                   type="text" 
+                  id="projectName"
                   name="name" 
                   required
                   value={formData.name} 
@@ -216,9 +217,10 @@ const TaskProjectHub = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Client Code</label>
+                <label htmlFor="clientCode" className="block text-sm font-medium text-slate-300 mb-1">Client Code</label>
                 <input 
                   type="text" 
+                  id="clientCode"
                   name="client_code" 
                   value={formData.client_code} 
                   onChange={handleChange}
@@ -228,8 +230,9 @@ const TaskProjectHub = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Description</label>
+                <label htmlFor="projectDescription" className="block text-sm font-medium text-slate-300 mb-1">Description</label>
                 <textarea 
+                  id="projectDescription"
                   name="description" 
                   value={formData.description} 
                   onChange={handleChange}
@@ -240,10 +243,10 @@ const TaskProjectHub = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Status</label>
+                <label htmlFor="projectActive" className="block text-sm font-medium text-slate-400 mb-1">Status</label>
                 <div className="flex items-center h-10 mt-1">
                    <label className="relative inline-flex items-center cursor-pointer">
-                     <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="sr-only peer" />
+                     <input type="checkbox" id="projectActive" name="is_active" checked={formData.is_active} onChange={handleChange} className="sr-only peer" />
                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                      <span className="ml-3 text-sm font-medium text-slate-300">{formData.is_active ? 'Active' : 'Archived'}</span>
                    </label>

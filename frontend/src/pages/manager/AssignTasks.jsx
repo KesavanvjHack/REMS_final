@@ -214,6 +214,8 @@ const AssignTasks = () => {
           <div className="flex flex-col md:flex-row flex-wrap items-start md:items-center gap-3 bg-slate-800/50 p-2 rounded-xl border border-slate-700/50">
             <div className="flex gap-2 flex-wrap">
               <select 
+                id="exportAssignedTo"
+                name="export-assigned-to"
                 value={exportAssignedTo}
                 onChange={(e) => setExportAssignedTo(e.target.value)}
                 className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -226,6 +228,8 @@ const AssignTasks = () => {
               </select>
 
               <select 
+                id="exportStatus"
+                name="export-status"
                 value={exportStatus}
                 onChange={(e) => setExportStatus(e.target.value)}
                 className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -237,6 +241,8 @@ const AssignTasks = () => {
               </select>
 
               <select 
+                id="exportType"
+                name="export-type"
                 value={exportType}
                 onChange={(e) => handleQuickSelect(e.target.value)}
                 className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -250,6 +256,8 @@ const AssignTasks = () => {
             <div className="flex items-center gap-2">
               <input 
                 type="date" 
+                id="exportStartDate"
+                name="export-start-date"
                 value={startDate}
                 onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
                 className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
@@ -257,6 +265,8 @@ const AssignTasks = () => {
               <span className="text-slate-500 text-sm">to</span>
               <input 
                 type="date" 
+                id="exportEndDate"
+                name="export-end-date"
                 value={endDate}
                 onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
                 className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
@@ -265,19 +275,19 @@ const AssignTasks = () => {
 
             <button 
               onClick={handleExport}
-              className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
+              className="flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap w-full sm:w-auto"
             >
               <ArrowDownTrayIcon className="h-4 w-4" />
-              Export
+              <span>Export</span>
             </button>
           </div>
 
           <button 
             onClick={() => openModal('create')}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-colors whitespace-nowrap"
+            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-all whitespace-nowrap w-full xl:w-auto font-medium shadow-lg shadow-indigo-500/20"
           >
             <PlusIcon className="h-5 w-5" />
-            Assign New Task
+            <span>Assign New Task</span>
           </button>
         </div>
       </div>
@@ -286,7 +296,7 @@ const AssignTasks = () => {
         <div className="p-6 border-b border-slate-700 flex justify-between items-center">
           <h3 className="text-lg font-semibold text-slate-200 cursor-default">Task Queue</h3>
           <div className="flex gap-2">
-             <input type="text" placeholder="Search tasks..." className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-1 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
+             <input type="text" id="taskSearch" name="task-search" placeholder="Search tasks..." className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-1 text-sm text-slate-200 focus:outline-none focus:border-indigo-500" />
           </div>
         </div>
         
@@ -352,9 +362,10 @@ const AssignTasks = () => {
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Title *</label>
+                <label htmlFor="modalTaskTitle" className="block text-sm font-medium text-slate-300 mb-1">Title *</label>
                 <input 
                   type="text" 
+                  id="modalTaskTitle"
                   name="title" 
                   required
                   value={formData.title} 
@@ -365,8 +376,9 @@ const AssignTasks = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Description</label>
+                <label htmlFor="modalTaskDescription" className="block text-sm font-medium text-slate-300 mb-1">Description</label>
                 <textarea 
+                  id="modalTaskDescription"
                   name="description" 
                   value={formData.description} 
                   onChange={handleInputChange}
@@ -378,8 +390,9 @@ const AssignTasks = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Assigned To</label>
+                  <label htmlFor="modalAssignedTo" className="block text-sm font-medium text-slate-300 mb-1">Assigned To</label>
                   <select 
+                    id="modalAssignedTo"
                     name="assigned_to" 
                     value={formData.assigned_to} 
                     onChange={handleInputChange}
@@ -392,8 +405,9 @@ const AssignTasks = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Project</label>
+                  <label htmlFor="modalProject" className="block text-sm font-medium text-slate-300 mb-1">Project</label>
                   <select 
+                    id="modalProject"
                     name="project" 
                     value={formData.project} 
                     onChange={handleInputChange}
@@ -409,8 +423,9 @@ const AssignTasks = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Status</label>
+                  <label htmlFor="modalTaskStatus" className="block text-sm font-medium text-slate-300 mb-1">Status</label>
                   <select 
+                    id="modalTaskStatus"
                     name="status" 
                     value={formData.status} 
                     onChange={handleInputChange}
@@ -422,9 +437,10 @@ const AssignTasks = () => {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-1">Due Date</label>
+                  <label htmlFor="modalTaskDueDate" className="block text-sm font-medium text-slate-300 mb-1">Due Date</label>
                   <input 
                     type="date" 
+                    id="modalTaskDueDate"
                     name="due_date" 
                     value={formData.due_date} 
                     onChange={handleInputChange}

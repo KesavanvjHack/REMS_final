@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useContext } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
 import api from '../api/axios';
 import { EnvelopeIcon, UserIcon, KeyIcon, ClipboardDocumentCheckIcon } from '@heroicons/react/24/outline';
@@ -11,11 +12,17 @@ const SignUp = () => {
   const [verifiedToken, setVerifiedToken] = useState(null);
   
   // Profile Data
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const { user } = useContext(AuthContext);
   const navigate = useNavigate();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      if (user.role === 'admin') navigate('/admin');
+      else if (user.role === 'manager') navigate('/manager');
+      else navigate('/employee');
+    }
+  }, [user, navigate]);
 
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
@@ -99,16 +106,19 @@ const SignUp = () => {
           {step === 1 && (
             <form onSubmit={handleEmailSubmit} className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Corporate Email Address</label>
+                <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">Corporate Email Address</label>
                 <div className="relative">
                   <EnvelopeIcon className="w-5 h-5 text-slate-500 absolute left-3 top-3" />
                   <input
                     type="email"
+                    id="email"
+                    name="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl py-2.5 pl-10 pr-4 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
                     placeholder="name@company.com"
                     required
+                    autoComplete="email"
                   />
                 </div>
               </div>
@@ -132,15 +142,18 @@ const SignUp = () => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2 text-center">Enter Verification Code</label>
+                <label htmlFor="otp" className="block text-sm font-medium text-slate-300 mb-2 text-center">Enter Verification Code</label>
                 <input
                   type="text"
+                  id="otp"
+                  name="otp"
                   maxLength="6"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl py-4 text-center text-3xl tracking-[1em] font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all"
                   placeholder="------"
                   required
+                  autoComplete="one-time-code"
                 />
               </div>
 
@@ -173,44 +186,53 @@ const SignUp = () => {
               
               <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">First Name</label>
+                    <label htmlFor="firstName" className="block text-sm font-medium text-slate-300 mb-2">First Name</label>
                     <div className="relative">
                       <UserIcon className="w-5 h-5 text-slate-500 absolute left-3 top-3" />
                       <input
                         type="text"
+                        id="firstName"
+                        name="first-name"
                         value={firstName}
                         onChange={(e) => setFirstName(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-700 rounded-xl py-2.5 pl-10 pr-4 text-slate-200"
                         required
+                        autoComplete="given-name"
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">Last Name</label>
+                    <label htmlFor="lastName" className="block text-sm font-medium text-slate-300 mb-2">Last Name</label>
                     <div className="relative">
                       <UserIcon className="w-5 h-5 text-slate-500 absolute left-3 top-3" />
                       <input
                         type="text"
+                        id="lastName"
+                        name="last-name"
                         value={lastName}
                         onChange={(e) => setLastName(e.target.value)}
                         className="w-full bg-slate-950 border border-slate-700 rounded-xl py-2.5 pl-10 pr-4 text-slate-200"
                         required
+                        autoComplete="family-name"
                       />
                     </div>
                   </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Create Password</label>
+                <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-2">Create Password</label>
                 <div className="relative">
                   <KeyIcon className="w-5 h-5 text-slate-500 absolute left-3 top-3" />
                   <input
                     type="password"
+                    id="password"
+                    name="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl py-2.5 pl-10 pr-4 text-slate-200"
                     placeholder="••••••••"
                     required
+                    autoComplete="new-password"
                   />
                 </div>
               </div>

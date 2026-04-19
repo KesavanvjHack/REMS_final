@@ -86,12 +86,12 @@ const OrganizationManagement = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <h1 className="text-2xl font-bold tracking-tight text-white">Organization Management</h1>
         <button 
            onClick={openAddModal}
-           className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all flex items-center gap-2">
-          <span>+</span> Add Department
+           className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg font-medium shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all flex items-center justify-center gap-2 whitespace-nowrap w-full sm:w-auto">
+          <span className="text-lg">+</span> <span>Add Department</span>
         </button>
       </div>
 
@@ -142,14 +142,14 @@ const OrganizationManagement = () => {
             <form onSubmit={handleSubmit} className="space-y-4">
               
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Department Name *</label>
-                <input required type="text" name="name" value={formData.name} onChange={handleChange}
+                <label htmlFor="deptName" className="block text-sm font-medium text-slate-400 mb-1">Department Name *</label>
+                <input required type="text" id="deptName" name="name" value={formData.name} onChange={handleChange}
                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Description</label>
-                <textarea name="description" value={formData.description} onChange={handleChange} rows={3}
+                <label htmlFor="deptDescription" className="block text-sm font-medium text-slate-400 mb-1">Description</label>
+                <textarea id="deptDescription" name="description" value={formData.description} onChange={handleChange} rows={3}
                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
               </div>
 

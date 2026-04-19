@@ -20,6 +20,7 @@ const LeaveRequest = () => {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [exportType, setExportType] = useState('custom');
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     fetchMyLeaves();
@@ -173,13 +174,15 @@ const LeaveRequest = () => {
           <div className="p-2 bg-indigo-500/20 rounded-lg">
             <CalendarIcon className="h-6 w-6 text-indigo-400" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">Leave Management</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">Leave Management</h1>
         </div>
 
         {/* Export Controls for Leaves */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
           <div className="flex gap-2">
             <select 
+              id="exportType"
+              name="export-type"
               value={exportType}
               onChange={(e) => handleQuickSelect(e.target.value)}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -193,6 +196,8 @@ const LeaveRequest = () => {
           <div className="flex items-center gap-2">
             <input 
               type="date" 
+              id="exportStartDate"
+              name="export-start-date"
               value={startDate}
               onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
@@ -200,19 +205,22 @@ const LeaveRequest = () => {
             <span className="text-slate-500">to</span>
             <input 
               type="date" 
+              id="exportEndDate"
+              name="export-end-date"
               value={endDate}
               onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
             />
           </div>
 
-          <button 
-            onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium"
-          >
-            <ArrowDownTrayIcon className="h-4 w-4" />
-            Export CSV
-          </button>
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="p-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 text-white rounded-lg transition-all flex items-center justify-center gap-2 font-medium whitespace-nowrap w-full sm:w-auto"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              <span className="text-xs">{isExporting ? 'Exporting...' : 'Export CSV'}</span>
+            </button>
         </div>
       </div>
 
@@ -222,9 +230,11 @@ const LeaveRequest = () => {
           <h2 className="text-lg font-semibold text-white mb-6">Apply for Leave</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Leave Type</label>
+              <label htmlFor="leaveType" className="block text-sm font-medium text-slate-300 mb-2">Leave Type</label>
               <select
                 required
+                id="leaveType"
+                name="leave_type"
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 appearance-none"
                 value={formData.leave_type}
                 onChange={(e) => setFormData({ ...formData, leave_type: e.target.value })}
@@ -238,20 +248,24 @@ const LeaveRequest = () => {
             
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">From Date</label>
+                <label htmlFor="fromDate" className="block text-sm font-medium text-slate-300 mb-2">From Date</label>
                 <input
-                  type="date"
-                  required
-                  className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
+                   type="date"
+                   required
+                   id="fromDate"
+                   name="from_date"
+                   className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
                   value={formData.from_date}
                   onChange={(e) => setFormData({ ...formData, from_date: e.target.value })}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">To Date</label>
+                <label htmlFor="toDate" className="block text-sm font-medium text-slate-300 mb-2">To Date</label>
                 <input
                   type="date"
                   required
+                  id="toDate"
+                  name="to_date"
                   className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
                   value={formData.to_date}
                   onChange={(e) => setFormData({ ...formData, to_date: e.target.value })}
@@ -260,9 +274,11 @@ const LeaveRequest = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Reason</label>
+              <label htmlFor="reason" className="block text-sm font-medium text-slate-300 mb-2">Reason</label>
               <textarea
                 required
+                id="reason"
+                name="reason"
                 rows="3"
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 resize-none"
                 value={formData.reason}

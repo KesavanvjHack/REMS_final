@@ -37,8 +37,8 @@ const AdminReports = () => {
 
       <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl">
         <h2 className="text-lg font-semibold text-white mb-6">Average Daily Work & Idle Hours by Employee</h2>
-        <div className="h-96 w-full">
-          <ResponsiveContainer>
+        <div className="h-96 w-full min-w-0" style={{ position: 'relative' }}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300}>
             <BarChart data={teamData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
               <XAxis dataKey="user_name" stroke="#94a3b8" />

@@ -243,7 +243,7 @@ class Attendance(models.Model):
 
     @property
     def effective_work_seconds(self):
-        """Actual productive seconds = work - break - idle"""
+        """Returns Net Productive Seconds: Gross Duration - Breaks - Idle."""
         return max(0, self.total_work_seconds - self.total_break_seconds - self.total_idle_seconds)
 
 
@@ -570,3 +570,21 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.type} - {self.recipient.email} - {'Read' if self.is_read else 'Unread'}"
+
+
+class ScreenCapture(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='screen_captures', db_index=True)
+    work_session = models.ForeignKey(
+        WorkSession, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='screen_captures'
+    )
+    image = models.ImageField(upload_to='screenshots/%Y/%m/%d/')
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = 'screen_captures'
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"Screen {self.user.email} @ {self.timestamp}"

@@ -1,7 +1,7 @@
-import { useState, useEffect, useContext, useMemo } from 'react';
+import { useState, useEffect, useContext, useMemo, useRef } from 'react';
 import api from '../../api/axios';
 import toast from 'react-hot-toast';
-import { PlayIcon, StopIcon, PauseIcon } from '@heroicons/react/24/solid';
+import { PlayIcon, StopIcon, PauseIcon, CameraIcon } from '@heroicons/react/24/solid';
 import { ClockIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import { AuthContext } from '../../context/AuthContext';
 
@@ -14,58 +14,62 @@ const formatTime12h = (timeStr) => {
 };
 
 const WorkSession = () => {
-  const { policy, user, status, setStatus } = useContext(AuthContext);
+  const { policy, user, status, setStatus, sendJson } = useContext(AuthContext);
   const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState(new Date());
   const [breakType, setBreakType] = useState('lunch');
   const [breakTimeLeft, setBreakTimeLeft] = useState(0);
   const [activeTicks, setActiveTicks] = useState(0); // ticks at 0.1s for smooth live counter
+  const [idleTicks, setIdleTicks] = useState(0);
   const [attendance, setAttendance] = useState(null);
   const [hasCheckedOutToday, setHasCheckedOutToday] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
+  const [lastCaptureTime, setLastCaptureTime] = useState(null);
+  const syncIntervalRef = useRef(null);
+  // Real-time Idle Threshold: Derived from the Attendance Policy (minutes -> seconds)
+  const idleThreshold = (policy?.idle_threshold_minutes || 15) * 60;
+
+  const containerRef = useRef(null);
 
   // Compute shift restriction immediately — no API needed
   const isOutsideShift = useMemo(() => {
     if (user?.role === 'admin') return false; // Admins bypass
-    const now = new Date();
     const [sH, sM] = (policy?.shift_start_time || '09:30').split(':').map(Number);
-    const shiftStart = new Date();
+    const shiftStart = new Date(now);
     shiftStart.setHours(sH, sM, 0, 0);
     const [eH, eM] = (policy?.shift_end_time || '18:30').split(':').map(Number);
-    const shiftEnd = new Date();
+    const shiftEnd = new Date(now);
     shiftEnd.setHours(eH, eM, 0, 0);
     return now < shiftStart || now > shiftEnd;
-  }, [policy, user]);
+  }, [policy, user, now]);
+
+  // Global Snapshot Engine handled in DashboardLayout.jsx
+
 
   useEffect(() => {
     fetchStatus();
     
-    // Sync polling every 60 seconds for real-time timesheet updates
-    const intervalId = setInterval(() => {
-      fetchStatus();
-    }, 60000);
+    // 1. Continuous Sync (Heartbeat) every 15s for high-precision
+    syncIntervalRef.current = setInterval(async () => {
+      if (status === 'working' || status === 'idle' || status === 'on_break') {
+         try {
+           await api.post('/sessions/sync/');
+         } catch (err) {
+           console.error('[Sync] Heartbeat failed:', err);
+         }
+      }
+    }, 15000);
 
-    // Fast 0.1s tick for smooth live counter
+    // 3. Fast 0.1s tick for smooth live counter + Auto-Idle logic
     const countdownId = setInterval(() => {
-      setStatus(currentStatus => {
-        // Increment work ticks if working or idle (total work = all time clocked in)
-        if (currentStatus === 'working' || currentStatus === 'idle') {
-          setActiveTicks(prev => prev + 1);
+      const currentTime = new Date();
+      setNow(currentTime); 
 
-          // Auto-Checkout Logic: If working and passed shift end time
-          if (policy?.shift_end_time && !loading) {
-            const now = new Date();
-            const [endH, endM] = policy.shift_end_time.split(':').map(Number);
-            const shiftEnd = new Date();
-            shiftEnd.setHours(endH, endM, 0, 0);
-
-            if (now >= shiftEnd) {
-              console.log("Shift end reached. Auto-checking out...");
-              handleAction('work', 'stop');
-              toast.success("Shift ended. Auto-checkout triggered.");
-            }
-          }
-        }
-        return currentStatus;
-      });
+      if (status === 'working') {
+        setActiveTicks(prev => prev + 1);
+      } else if (status === 'idle') {
+        setIdleTicks(prev => prev + 1);
+      }
 
       const storedBreak = localStorage.getItem('rems_active_break');
       if (storedBreak) {
@@ -76,10 +80,44 @@ const WorkSession = () => {
     }, 100); // 0.1 second ticks
 
     return () => {
-       clearInterval(intervalId);
+       clearInterval(syncIntervalRef.current);
        clearInterval(countdownId);
     };
-  }, [policy]);
+  }, [status]); 
+
+  // Auto-activate monitoring removed here (now handled globally in DashboardLayout)
+  /*
+  useEffect(() => {
+    if ((status === 'working' || status === 'idle') && sharerRef.current && !sharerRef.current.isSharing) {
+        console.log("Auto-triggering entire screen share...");
+        sharerRef.current.startSharing();
+    }
+  }, [status]);
+  */
+
+  // RELIABLE AUTO-CHECKOUT EFFECT
+  const isCheckingOutRef = useRef(false);
+  useEffect(() => {
+    if (!policy?.shift_end_time || loading || isCheckingOutRef.current) return;
+    if (status !== 'working' && status !== 'idle') return;
+
+    const [endH, endM] = policy.shift_end_time.split(':').map(Number);
+    const shiftEnd = new Date(now);
+    shiftEnd.setHours(endH, endM, 0, 0);
+
+    if (now >= shiftEnd) {
+      isCheckingOutRef.current = true; // Lock
+      console.log("DYNAMIC TRIGGER: Auto-checking out session at", now.toLocaleTimeString());
+      
+      handleAction('work', 'stop').then(() => {
+        toast.success("Shift ended. You have been automatically checked out.");
+      }).catch((err) => {
+        console.error("Auto-checkout failed:", err);
+      }).finally(() => {
+        isCheckingOutRef.current = false;
+      });
+    }
+  }, [now, policy, status, loading]);
 
   // Auto-resume work when break time expires
   useEffect(() => {
@@ -94,48 +132,79 @@ const WorkSession = () => {
     }
   }, [breakTimeLeft, status, loading]);
 
+  const fetchErrorCountRef = useRef(0);
   const fetchStatus = async () => {
     try {
       const res = await api.get('/status/me/');
+      fetchErrorCountRef.current = 0; // Reset on success
       setStatus(res.data.status);
       setAttendance(res.data.attendance);
 
       // Check if user has already checked out today
       if (res.data.attendance) {
-        setHasCheckedOutToday(res.data.attendance.has_completed_session);
-      }
-
-
-      
-      // Sync the total work seconds from the server (total time since first clock-in)
-      if (res.data.attendance) {
-        setActiveTicks((res.data.attendance.total_work_seconds || 0) * 10);
+        setHasCheckedOutToday(!!res.data.attendance.has_completed_session);
+        setActiveTicks((res.data.attendance.effective_work_seconds || 0) * 10);
+        setIdleTicks((res.data.attendance.total_idle_seconds || 0) * 10);
       } else if (res.data.status === 'offline') {
         setActiveTicks(0);
+        setIdleTicks(0);
+        setHasCheckedOutToday(false);
       }
     } catch (err) {
-      toast.error('Failed to fetch real-time status');
+      // Only show toast on first failure to avoid spamming
+      if (fetchErrorCountRef.current === 0) {
+        const msg = err.response?.data?.error || 'Failed to fetch real-time status';
+        toast.error(msg, { id: 'status-fetch-error' });
+      }
+      fetchErrorCountRef.current += 1;
+      console.error('[WorkSession] fetchStatus error:', err.response?.data || err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  // UI Continuity Sync: Adjust ticks when status flips (Handled globally now, but UI needs tick shift)
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    if (prevStatusRef.current === 'working' && status === 'idle') {
+        // Retroactive UI shift
+        const thresholdTicks = idleThreshold * 10;
+        setActiveTicks(prev => Math.max(0, prev - thresholdTicks));
+        setIdleTicks(prev => prev + thresholdTicks);
+    }
+    prevStatusRef.current = status;
+  }, [status]);
+
+  const handleIdleDetection = async (action) => {
+    // Deprecated in favor of global AuthContext detection
+    // But kept as a shell if needed for manual toggles
+  };
+
   const handleAction = async (endpoint, action) => {
+    const originalStatus = status;
     try {
       setLoading(true);
-      const tempStatus = action === 'start' ? 'working' : 'offline';
-      setStatus(tempStatus);
-      window.dispatchEvent(new CustomEvent('statusChange', { detail: tempStatus }));
-
-      await api.post(`/sessions/${endpoint}/`, { action });
-      await fetchStatus();
-      if (endpoint === 'work' && action === 'stop') {
-         localStorage.removeItem('rems_active_break');
+      
+      // We no longer set status optimistically to prevent UI/UX desync on backend failure
+      const response = await api.post(`/sessions/${endpoint}/`, { action });
+      
+      if (response.data) {
+          const newStatus = action === 'start' ? 'working' : 'offline';
+          setStatus(newStatus);
+          window.dispatchEvent(new CustomEvent('statusChange', { detail: newStatus }));
+          await fetchStatus();
+          
+          if (endpoint === 'work' && action === 'stop') {
+             localStorage.removeItem('rems_active_break');
+          }
+          toast.success(`Session ${action === 'start' ? 'started' : 'ended'} successfully`);
       }
-      toast.success(`Action successfully recorded`);
     } catch (err) {
-      toast.error(err.response?.data?.error || `Failed to perform ${action} action`);
-      fetchStatus(); // revert on fail
+      // Revert status on failure
+      setStatus(originalStatus);
+      const errorMsg = err.response?.data?.error || `Failed to ${action} session. Please try again.`;
+      toast.error(errorMsg);
+      console.error("Action failure:", err);
     } finally {
       setLoading(false);
     }
@@ -186,22 +255,22 @@ const WorkSession = () => {
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-8 mt-10">
-      <div className="text-center mb-10">
-        <h1 className="text-3xl font-bold tracking-tight text-white mb-2">Remote Work Terminal</h1>
-        <p className="text-slate-400">Log your active hours and breaks for accurate attendance calculation.</p>
+    <div className="max-w-2xl mx-auto space-y-6 sm:space-y-8 mt-4 sm:mt-10">
+      <div className="text-center mb-6 sm:mb-10 px-4">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white mb-2">Remote Work Terminal</h1>
+        <p className="text-sm sm:text-base text-slate-400">Log your active hours and breaks for accurate attendance calculation.</p>
         
         {policy && (
-          <div className="flex items-center justify-center gap-6 mt-6">
-            <div className="flex flex-col items-center px-6 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
-              <span className="text-[10px] uppercase font-bold text-indigo-400 tracking-widest">Enable Time</span>
-              <span className="text-lg font-mono font-bold text-indigo-300">
+          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 mt-6">
+            <div className="flex flex-col items-center px-4 sm:px-6 py-2 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl">
+              <span className="text-[9px] sm:text-[10px] uppercase font-bold text-indigo-400 tracking-widest">Enable Time</span>
+              <span className="text-base sm:text-lg font-mono font-bold text-indigo-300">
                 {new Date(`2000-01-01T${policy.shift_start_time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
-            <div className="flex flex-col items-center px-6 py-2 bg-rose-500/10 border border-rose-500/20 rounded-2xl">
-              <span className="text-[10px] uppercase font-bold text-rose-400 tracking-widest">Shift End</span>
-              <span className="text-lg font-mono font-bold text-rose-300">
+            <div className="flex flex-col items-center px-4 sm:px-6 py-2 bg-rose-500/10 border border-rose-500/20 rounded-2xl">
+              <span className="text-[9px] sm:text-[10px] uppercase font-bold text-rose-400 tracking-widest">Shift End</span>
+              <span className="text-base sm:text-lg font-mono font-bold text-rose-300">
                 {new Date(`2000-01-01T${policy.shift_end_time}`).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
@@ -209,15 +278,15 @@ const WorkSession = () => {
         )}
       </div>
 
-      <div className="bg-slate-800/50 border border-slate-700 rounded-3xl p-10 flex flex-col items-center shadow-xl">
-        <div className="mb-8 p-4 rounded-full bg-slate-900/80 border border-slate-700 shadow-inner">
-          <ClockIcon className="h-16 w-16 text-indigo-400" />
+      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl sm:rounded-3xl p-6 sm:p-10 flex flex-col items-center shadow-xl">
+        <div className="mb-6 sm:mb-8 p-3 sm:p-4 rounded-full bg-slate-900/80 border border-slate-700 shadow-inner">
+          <ClockIcon className="h-12 w-12 sm:h-16 sm:w-16 text-indigo-400" />
         </div>
         
-        <h2 className="text-xl font-semibold text-slate-200 mb-8 flex flex-col items-center gap-4">
-          <div className="flex items-center">
-            Current State: 
-            <span className={`ml-3 px-4 py-1.5 rounded-full text-base font-bold uppercase tracking-widest
+        <h2 className="text-lg sm:text-xl font-semibold text-slate-200 mb-6 sm:mb-8 flex flex-col items-center gap-4 w-full">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <span>Current State:</span>
+            <span className={`px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-base font-bold uppercase tracking-widest
               ${status === 'working' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.2)]' : 
                 status === 'on_break' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : 
                 status === 'idle' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
@@ -228,18 +297,30 @@ const WorkSession = () => {
           </div>
           
           {(status === 'working' || activeTicks > 0) && (
-            <div className="flex flex-col items-center mt-2 bg-slate-900/50 px-8 py-4 rounded-2xl border border-slate-700">
-              <span className="text-xs text-slate-400 uppercase tracking-widest font-bold mb-1">Total Work Time</span>
-              <span className="text-4xl font-mono font-black text-emerald-400 tracking-tight drop-shadow-[0_0_10px_rgba(16,185,129,0.3)]">
+            <div className="flex flex-col items-center mt-2 bg-slate-900/50 px-6 sm:px-8 py-4 rounded-2xl border border-slate-700 w-full max-w-sm">
+              <span className="text-[10px] sm:text-xs text-slate-400 uppercase tracking-widest font-bold mb-1 text-center">
+                {status === 'idle' ? 'Work Timer Paused' : 'Total Work Time'}
+              </span>
+              <span className={`text-3xl sm:text-4xl font-mono font-black tracking-tight drop-shadow-[0_0_10px_rgba(16,185,129,0.3)] ${status === 'idle' ? 'text-slate-500' : 'text-emerald-400'}`}>
                 {Math.floor(Math.floor(activeTicks / 10) / 3600).toString().padStart(2, '0')}:
                 {Math.floor((Math.floor(activeTicks / 10) % 3600) / 60).toString().padStart(2, '0')}:
                 {(Math.floor(activeTicks / 10) % 60).toString().padStart(2, '0')}
               </span>
+              {status === 'idle' && (
+                <div className="mt-4 pt-4 border-t border-slate-700/50 flex flex-col items-center w-full">
+                   <span className="text-[9px] sm:text-[10px] text-amber-500 font-bold uppercase tracking-widest mb-1">Current Idle Duration</span>
+                   <span className="text-xl sm:text-2xl font-mono font-bold text-amber-400">
+                    {Math.floor(Math.floor(idleTicks / 10) / 3600).toString().padStart(2, '0')}:
+                    {Math.floor((Math.floor(idleTicks / 10) % 3600) / 60).toString().padStart(2, '0')}:
+                    {(Math.floor(idleTicks / 10) % 60).toString().padStart(2, '0')}
+                   </span>
+                </div>
+              )}
             </div>
           )}
         </h2>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 w-full">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 w-full">
           {(status === 'offline' || status === 'online') && (
             <div className="sm:col-span-2 space-y-4">
               {/* Restriction Message */}
@@ -302,17 +383,17 @@ const WorkSession = () => {
           )}
 
           {status === 'on_break' && (
-            <div className="sm:col-span-2 flex flex-col items-center gap-6 bg-slate-900/50 p-8 rounded-3xl border border-cyan-500/20 shadow-inner">
+            <div className="sm:col-span-2 flex flex-col items-center gap-4 sm:gap-6 bg-slate-900/50 p-6 sm:p-8 rounded-2xl sm:rounded-3xl border border-cyan-500/20 shadow-inner">
               <div className="text-center">
-                <p className="text-cyan-400 text-sm font-bold uppercase tracking-widest mb-2">Time Remaining</p>
-                <div className="text-5xl font-mono font-black text-white drop-shadow-[0_0_15px_rgba(6,182,212,0.5)] tracking-tighter">
+                <p className="text-cyan-400 text-[10px] sm:text-sm font-bold uppercase tracking-widest mb-2">Time Remaining</p>
+                <div className="text-4xl sm:text-5xl font-mono font-black text-white drop-shadow-[0_0_15px_rgba(6,182,212,0.5)] tracking-tighter">
                   {Math.floor(breakTimeLeft / 60).toString().padStart(2, '0')}:{(breakTimeLeft % 60).toString().padStart(2, '0')}
                 </div>
               </div>
               <button
                 onClick={handleBreakStop}
                 disabled={loading}
-                className="w-full flex items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white py-4 px-6 rounded-2xl font-bold tracking-wide shadow-[0_0_25px_rgba(16,185,129,0.4)] transition-all disabled:opacity-50"
+                className="w-full flex items-center justify-center gap-3 bg-emerald-600 hover:bg-emerald-500 text-white py-3.5 sm:py-4 px-6 rounded-2xl font-bold tracking-wide shadow-[0_0_25px_rgba(16,185,129,0.4)] transition-all disabled:opacity-50"
               >
                 <PlayIcon className="h-6 w-6" />
                 End Break & Resume Work
@@ -321,6 +402,8 @@ const WorkSession = () => {
           )}
         </div>
       </div>
+
+
     </div>
   );
 };

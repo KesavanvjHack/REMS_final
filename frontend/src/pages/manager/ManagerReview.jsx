@@ -246,8 +246,11 @@ const ManagerReview = () => {
           {/* Bottom Row: Detailed Filters */}
           <div className="flex flex-wrap items-center gap-3 bg-slate-900/40 p-2.5 rounded-2xl border border-slate-800/50">
             <div className="flex items-center gap-2 bg-slate-950/50 border border-slate-800 rounded-xl px-4 py-2 group focus-within:ring-2 ring-indigo-500/50 transition-all">
+              <label htmlFor="employeeFilter" className="sr-only">Filter by Employee</label>
               <FunnelIcon className="h-4 w-4 text-slate-500" />
               <select
+                id="employeeFilter"
+                name="employee-filter"
                 value={employeeFilter}
                 onChange={(e) => setEmployeeFilter(e.target.value)}
                 className="bg-transparent text-slate-300 text-[12px] font-bold focus:outline-none min-w-[160px] cursor-pointer"
@@ -259,7 +262,10 @@ const ManagerReview = () => {
               </select>
             </div>
 
+            <label htmlFor="dateRange" className="sr-only">Filter by Date Range</label>
             <select
+              id="dateRange"
+              name="date-range"
               value={dateRange}
               onChange={(e) => setDateRange(e.target.value)}
               className="bg-slate-950/50 border border-slate-800 text-slate-300 rounded-xl px-4 py-2 text-[12px] font-bold focus:ring-2 ring-indigo-500/50 cursor-pointer"
@@ -271,15 +277,21 @@ const ManagerReview = () => {
 
             {dateRange === 'custom' && (
               <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2">
+                <label htmlFor="startDate" className="sr-only">Start Date</label>
                 <input
                   type="date"
+                  id="startDate"
+                  name="start-date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
                   className="bg-slate-950/50 border border-slate-800 text-slate-300 rounded-xl px-3 py-1.5 text-[12px] [color-scheme:dark] focus:ring-2 ring-indigo-500/50"
                 />
                 <span className="text-slate-700 font-bold">/</span>
+                <label htmlFor="endDate" className="sr-only">End Date</label>
                 <input
                   type="date"
+                  id="endDate"
+                  name="end-date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
                   className="bg-slate-950/50 border border-slate-800 text-slate-300 rounded-xl px-3 py-1.5 text-[12px] [color-scheme:dark] focus:ring-2 ring-indigo-500/50"

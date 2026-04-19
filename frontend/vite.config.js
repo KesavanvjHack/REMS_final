@@ -1,8 +1,31 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { nodePolyfills } from 'vite-plugin-node-polyfills'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(), 
+    tailwindcss(),
+    nodePolyfills({
+      // Whether to polyfill `node:` protocol imports.
+      protocolImports: true,
+      // Specifically include the polyfills needed for simple-peer
+      include: ['events', 'util', 'buffer', 'process', 'stream'],
+      globals: {
+        Buffer: true,
+        global: true,
+        process: true,
+      },
+    })
+  ],
+  resolve: {
+    alias: {
+      'html2canvas': 'html2canvas/dist/html2canvas.esm.js',
+    }
+  },
+  optimizeDeps: {
+    include: ['html2canvas']
+  }
 })

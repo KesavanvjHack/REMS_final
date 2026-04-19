@@ -80,20 +80,20 @@ const Expenses = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
             <CurrencyDollarIcon className="h-6 w-6 text-indigo-400" />
             My Expenses
           </h2>
-          <p className="text-slate-400 mt-1">Submit and track WFH reimbursements and organization expenses.</p>
+          <p className="text-slate-400 mt-1 text-sm">Submit and track WFH reimbursements and organization expenses.</p>
         </div>
         <button 
           onClick={openModal}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-colors"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-all whitespace-nowrap w-full sm:w-auto font-medium shadow-lg shadow-indigo-500/20"
         >
           <PlusIcon className="h-5 w-5" />
-          Submit Expense
+          <span>Submit Expense</span>
         </button>
       </div>
 
@@ -176,9 +176,10 @@ const Expenses = () => {
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Expense Title *</label>
+                <label htmlFor="expenseTitle" className="block text-sm font-medium text-slate-300 mb-1">Expense Title *</label>
                 <input 
                   type="text" 
+                  id="expenseTitle"
                   name="title" 
                   required
                   value={formData.title} 
@@ -189,9 +190,10 @@ const Expenses = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Amount ($) *</label>
+                <label htmlFor="expenseAmount" className="block text-sm font-medium text-slate-300 mb-1">Amount ($) *</label>
                 <input 
                   type="number" 
+                  id="expenseAmount"
                   step="0.01"
                   name="amount" 
                   required
@@ -203,9 +205,11 @@ const Expenses = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Receipt Image (Optional)</label>
+                <label htmlFor="receiptFile" className="block text-sm font-medium text-slate-300 mb-1">Receipt Image (Optional)</label>
                 <input 
                   type="file" 
+                  id="receiptFile"
+                  name="receipt_image"
                   accept="image/*,.pdf"
                   onChange={handleFileChange}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-500/10 file:text-indigo-400 hover:file:bg-indigo-500/20 focus:outline-none" 

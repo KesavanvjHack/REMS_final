@@ -2,7 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import api from '../../api/axios';
 import { ChartBarIcon, ClockIcon, BuildingOfficeIcon, UserGroupIcon, ExclamationTriangleIcon, FlagIcon, ArrowDownTrayIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
-import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, parseISO, format } from 'date-fns';
 import { formatLastLogout, formatDecimalHours } from '../../utils/format';
 import LiveDuration from '../../components/LiveDuration';
 import { AuthContext } from '../../context/AuthContext';
@@ -12,6 +12,7 @@ const AttendanceHub = () => {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [viewingEmployee, setViewingEmployee] = useState(null);
   const { policy, user } = useContext(AuthContext);
 
   // Filter states
@@ -25,10 +26,10 @@ const AttendanceHub = () => {
   useEffect(() => {
     fetchData();
 
-    // Auto-refresh every 1 minute as requested
+    // Auto-refresh every 30 seconds for a more 'Live' feel
     const intervalId = setInterval(() => {
       fetchData(true); // silent refresh
-    }, 60000);
+    }, 30000);
 
     return () => clearInterval(intervalId);
   }, [dateFilter, startDate, endDate]);
@@ -173,55 +174,76 @@ const AttendanceHub = () => {
 
   return (
     <div className="space-y-6 page-fade-in">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-white">Company Attendance Hub</h1>
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">Company Attendance Hub</h1>
         
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
           {roleFilter === 'all' && (
-            <select
-              value={employeeFilter}
-              onChange={(e) => setEmployeeFilter(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2.5"
-            >
-              <option value="all">All Personnel</option>
-              {Array.from(new Set(attendance.filter(r => r.user_role !== 'admin').map(r => r.user_name))).sort().map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
+            <div className="flex flex-col">
+              <label htmlFor="employeeFilter" className="sr-only">Filter by Employee</label>
+              <select
+                id="employeeFilter"
+                name="employee-filter"
+                value={employeeFilter}
+                onChange={(e) => setEmployeeFilter(e.target.value)}
+                className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2.5"
+              >
+                <option value="all">All Personnel</option>
+                {Array.from(new Set(attendance.filter(r => r.user_role !== 'admin').map(r => r.user_name))).sort().map(name => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+              </select>
+            </div>
           )}
 
-          <select
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2.5"
-          >
-            <option value="all">All Roles</option>
-            <option value="employee">Employees</option>
-            <option value="manager">Managers</option>
-          </select>
+          <div className="flex flex-col">
+            <label htmlFor="roleFilter" className="sr-only">Filter by Role</label>
+            <select
+              id="roleFilter"
+              name="role-filter"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2.5"
+            >
+              <option value="all">All Roles</option>
+              <option value="employee">Employees</option>
+              <option value="manager">Managers</option>
+            </select>
+          </div>
 
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2.5"
-          >
-            <option value="today">Today</option>
-            <option value="this_week">This Week</option>
-            <option value="this_month">This Month</option>
-            <option value="custom">Custom Dates</option>
-          </select>
+          <div className="flex flex-col">
+            <label htmlFor="dateFilter" className="sr-only">Filter by Date Range Preset</label>
+            <select
+              id="dateFilter"
+              name="date-filter"
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2.5"
+            >
+              <option value="today">Today</option>
+              <option value="this_week">This Week</option>
+              <option value="this_month">This Month</option>
+              <option value="custom">Custom Dates</option>
+            </select>
+          </div>
 
           {dateFilter === 'custom' && (
             <div className="flex items-center gap-2">
+              <label htmlFor="startDate" className="sr-only">Start Date</label>
               <input
                 type="date"
+                id="startDate"
+                name="start-date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg p-2.5"
               />
               <span className="text-slate-500">to</span>
+              <label htmlFor="endDate" className="sr-only">End Date</label>
               <input
                 type="date"
+                id="endDate"
+                name="end-date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 className="bg-slate-900 border border-slate-700 text-slate-300 text-sm rounded-lg p-2.5"
@@ -239,27 +261,27 @@ const AttendanceHub = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-8">
-        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <div className="bg-slate-800/50 p-4 sm:p-6 rounded-xl border border-slate-700">
           <div className="flex items-center gap-3 text-emerald-400 mb-2">
-            <UserGroupIcon className="h-6 w-6" />
-            <h3 className="font-semibold">Present {dateFilter === 'today' ? 'Today' : ''}</h3>
+            <UserGroupIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+            <h3 className="text-sm sm:font-semibold">Present</h3>
           </div>
-          <p className="text-3xl font-bold text-white">{getFilteredRecords().filter(r => r.status?.toLowerCase() === 'present').length}</p>
+          <p className="text-2xl sm:text-3xl font-bold text-white">{getFilteredRecords().filter(r => r.status?.toLowerCase() === 'present').length}</p>
         </div>
-        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+        <div className="bg-slate-800/50 p-4 sm:p-6 rounded-xl border border-slate-700">
           <div className="flex items-center gap-3 text-sky-400 mb-2">
-            <ClockIcon className="h-6 w-6" />
-            <h3 className="font-semibold">Half Day</h3>
+            <ClockIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+            <h3 className="text-sm sm:font-semibold">Half Day</h3>
           </div>
-          <p className="text-3xl font-bold text-white">{getFilteredRecords().filter(r => r.status?.toLowerCase() === 'half_day' || r.status?.toLowerCase() === 'half day').length}</p>
+          <p className="text-2xl sm:text-3xl font-bold text-white">{getFilteredRecords().filter(r => r.status?.toLowerCase() === 'half_day' || r.status?.toLowerCase() === 'half day').length}</p>
         </div>
-        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+        <div className="bg-slate-800/50 p-4 sm:p-6 rounded-xl border border-slate-700">
           <div className="flex items-center gap-3 text-rose-400 mb-2">
-            <ExclamationTriangleIcon className="h-6 w-6" />
-            <h3 className="font-semibold">Absent</h3>
+            <ExclamationTriangleIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+            <h3 className="text-sm sm:font-semibold">Absent</h3>
           </div>
-          <p className="text-3xl font-bold text-white">
+          <p className="text-2xl sm:text-3xl font-bold text-white">
             {getFilteredRecords().filter(r => {
               const status = (r.status || '').toLowerCase();
               if (status !== 'absent') return false;
@@ -277,20 +299,20 @@ const AttendanceHub = () => {
             }).length}
           </p>
         </div>
-        <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+        <div className="bg-slate-800/50 p-4 sm:p-6 rounded-xl border border-slate-700">
           <div className="flex items-center gap-3 text-fuchsia-400 mb-2">
-            <BuildingOfficeIcon className="h-6 w-6" />
-            <h3 className="font-semibold">On Leave</h3>
+            <BuildingOfficeIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+            <h3 className="text-sm sm:font-semibold">On Leave</h3>
           </div>
-          <p className="text-3xl font-bold text-white">{getFilteredRecords().filter(r => r.status?.toLowerCase() === 'on_leave' || r.status?.toLowerCase() === 'on leave').length}</p>
+          <p className="text-2xl sm:text-3xl font-bold text-white">{getFilteredRecords().filter(r => r.status?.toLowerCase() === 'on_leave' || r.status?.toLowerCase() === 'on leave').length}</p>
         </div>
         {dateFilter === 'today' && (
-          <div className="bg-slate-800/50 p-6 rounded-xl border border-slate-700">
+          <div className="bg-slate-800/50 p-4 sm:p-6 rounded-xl border border-slate-700">
             <div className="flex items-center gap-3 text-blue-400 mb-2">
-              <ClockIcon className="h-6 w-6" />
-              <h3 className="font-semibold">Calculating</h3>
+              <ClockIcon className="h-5 w-5 sm:h-6 sm:w-6" />
+              <h3 className="text-sm sm:font-semibold">Calculating</h3>
             </div>
-            <p className="text-3xl font-bold text-white">
+            <p className="text-2xl sm:text-3xl font-bold text-white">
               {getFilteredRecords().filter(r => {
                 const now = new Date();
                 const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
@@ -341,17 +363,16 @@ const AttendanceHub = () => {
           <table className="w-full text-left text-xs text-slate-300">
             <thead className="text-[10px] text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
               <tr>
-                <th className="px-2 py-3 font-semibold tracking-wider">Date</th>
-                <th className="px-2 py-3 font-semibold tracking-wider">Name</th>
-                <th className="px-2 py-3 font-semibold tracking-wider hidden xl:table-cell">Role</th>
-                <th className="px-2 py-3 font-semibold tracking-wider">Login Time</th>
-                <th className="px-2 py-3 font-semibold tracking-wider hidden lg:table-cell">Last Logout</th>
-                <th className="px-2 py-3 font-semibold tracking-wider">Attendance</th>
-                <th className="px-2 py-3 font-semibold tracking-wider">Work (h)</th>
-                <th className="px-2 py-3 font-semibold tracking-wider">Break (h)</th>
-                <th className="px-2 py-3 font-semibold tracking-wider">Idle (h)</th>
-                <th className="px-2 py-3 font-semibold tracking-wider text-center">Anomalies</th>
-                <th className="px-2 py-3 font-semibold tracking-wider hidden md:table-cell">Remarks</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-xs whitespace-nowrap">Date</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-xs text-left">Team Member</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-center text-[10px] text-slate-400">Shift (Actual)</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-center text-xs">Attendance</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-right text-xs">Work</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-right text-xs">Break</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-right text-xs">Idle</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-right text-xs text-slate-400">Gap</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-center text-xs">Alerts</th>
+                <th className="px-2 py-3 font-semibold tracking-wider text-xs text-left">Remarks</th>
                 {user?.role === 'admin' && (
                   <th className="px-2 py-3 font-semibold tracking-wider text-center">Actions</th>
                 )}
@@ -389,22 +410,28 @@ const AttendanceHub = () => {
                 
                 return (
                 <tr key={record.id} className="hover:bg-slate-700/20 transition-colors">
-                  <td className="px-2 py-3 font-mono text-slate-400 text-[10px]">{record.date}</td>
+                  <td className="px-2 py-3 font-mono text-slate-400 text-[10px] whitespace-nowrap">
+                    {record.date ? format(parseISO(record.date), 'MMM dd, yyyy') : '-'}
+                  </td>
                   <td className="px-2 py-3">
                      <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/30 text-xs">
+                        <div className="w-6 h-6 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold border border-indigo-500/30 text-[10px]">
                            {record.user_name?.charAt(0) || '?'}
                         </div>
-                        <p className="font-medium text-slate-200 text-xs truncate max-w-[120px]" title={record.user_name}>{record.user_name}</p>
+                        <p className="font-medium text-slate-200 text-[11px] truncate max-w-[100px]" title={record.user_name}>{record.user_name}</p>
                      </div>
                   </td>
-                  <td className="px-2 py-3 font-medium text-slate-400 uppercase tracking-wider text-[10px] hidden xl:table-cell">
-                     {record.user_role || 'Employee'}
+                  <td className="px-2 py-3 text-center font-mono leading-tight whitespace-nowrap">
+                    <span className="block text-indigo-400 text-[10px] font-bold">
+                      {record.first_login ? format(parseISO(record.first_login), 'hh:mm a') : '--:--'}
+                    </span>
+                    <span className="block text-slate-600 text-[9px] my-0.5">to</span>
+                    <span className="block text-rose-400 text-[10px] font-bold">
+                      {record.last_logout && record.last_logout !== '--:--' ? format(parseISO(record.last_logout), 'hh:mm a') : '--:--'}
+                    </span>
                   </td>
-                  <td className="px-2 py-3 text-slate-400 font-mono text-[10px]">{formatLastLogout(record.first_login)}</td>
-                  <td className="px-2 py-3 text-slate-400 font-mono text-[10px] hidden lg:table-cell">{formatLastLogout(record.last_logout)}</td>
-                  <td className="px-2 py-3">
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-1 w-max
+                  <td className="px-2 py-3 text-center">
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-1 w-max mx-auto
                       ${isCalculating ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' :
                         normalizedStatus === 'present' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 
                         normalizedStatus === 'absent' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
@@ -422,57 +449,44 @@ const AttendanceHub = () => {
                       {displayStatus === 'on_leave' ? 'On Leave' : displayStatus === 'half_day' ? 'Half Day' : displayStatus}
                     </span>
                   </td>
-                  <td className="px-2 py-3 text-emerald-400 font-mono text-[11px] whitespace-nowrap">
-                    <LiveDuration
-                      initialSeconds={record.total_work_seconds}
-                      status={record.live_status}
-                      type="work"
-                      isToday={record.date === todayStr}
-                    />
+                  <td className="px-2 py-3 text-emerald-400 font-mono text-[10px] text-right">
+                    <LiveDuration initialSeconds={record.total_work_seconds} status={record.live_status} type="work" isToday={record.date === todayStr} />
                   </td>
-                  <td className="px-2 py-3 text-amber-400 font-mono text-[11px] whitespace-nowrap">
-                    <LiveDuration
-                      initialSeconds={record.total_break_seconds}
-                      status={record.live_status}
-                      type="break"
-                      isToday={record.date === todayStr}
-                    />
+                  <td className="px-2 py-3 text-cyan-400 font-mono text-[10px] text-right">
+                    <LiveDuration initialSeconds={record.total_break_seconds} status={record.live_status} type="break" isToday={record.date === todayStr} />
                   </td>
-                  <td className="px-2 py-3 text-rose-400 font-mono text-[11px] whitespace-nowrap">
-                    <LiveDuration
-                      initialSeconds={record.total_idle_seconds}
-                      status={record.live_status}
-                      type="idle"
-                      isToday={record.date === todayStr}
-                    />
+                  <td className="px-2 py-3 text-amber-400 font-mono text-[10px] text-right">
+                    <LiveDuration initialSeconds={record.total_idle_seconds} status={record.live_status} type="idle" isToday={record.date === todayStr} />
                   </td>
-                  <td className="px-2 py-3 text-center">
+                   <td className="px-2 py-3 text-orange-400/90 font-mono text-[10px] text-right whitespace-nowrap font-bold">
+                     {record.missing_seconds > 0 ? (
+                        <span>{Math.floor(record.missing_seconds / 3600).toString().padStart(2, '0')}:{Math.floor((record.missing_seconds % 3600) / 60).toString().padStart(2, '0')}:{(record.missing_seconds % 60).toString().padStart(2, '0')}</span>
+                     ) : '—'}
+                   </td>
+                   <td className="px-2 py-3 text-center">
                     {record.is_flagged ? (
-                      <span className="text-rose-400 font-bold text-[10px] flex items-center justify-center gap-1 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>
-                        <FlagIcon className="h-3 w-3" /> Flagged
+                      <span className="text-rose-400 font-bold text-[9px] flex items-center justify-center gap-1 bg-rose-500/10 px-1 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>
+                        <FlagIcon className="h-2.5 w-2.5" /> Alert
                       </span>
                     ) : (
-                      <span className="text-slate-600">—</span>
+                      <span className="text-slate-600 font-mono text-[10px]">—</span>
                     )}
                   </td>
-                  <td className="px-2 py-3 hidden md:table-cell">
+                  <td className="px-2 py-3">
                     {record.manager_remark ? (
-                      <div className="flex flex-col">
-                        <span className="text-indigo-400 text-[9px] font-medium italic underline underline-offset-4 decoration-indigo-500/30 uppercase tracking-wider">Note:</span>
-                        <p className="text-slate-300 text-[10px] mt-0.5 leading-relaxed truncate max-w-[120px]" title={record.manager_remark}>{record.manager_remark}</p>
-                      </div>
+                      <p className="text-slate-300 text-[10px] italic truncate max-w-[100px]" title={record.manager_remark}>{record.manager_remark}</p>
                     ) : record.flag_reason ? (
-                      <p className="text-slate-400 text-[10px] italic leading-relaxed truncate max-w-[120px]" title={record.flag_reason}>{record.flag_reason}</p>
+                      <p className="text-slate-400 text-[10px] italic truncate max-w-[100px]" title={record.flag_reason}>{record.flag_reason}</p>
                     ) : (
                       <span className="text-slate-600 font-mono text-[10px]">-</span>
                     )}
                   </td>
                   {user?.role === 'admin' && (
                     <td className="px-2 py-3">
-                      <div className="flex flex-wrap items-center justify-center gap-1.5">
-                        <button onClick={() => handleOverride(record, 'present')} title="Mark Present" className="w-6 h-6 flex items-center justify-center bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-bold rounded hover:bg-emerald-500/20 transition-colors">P</button>
-                        <button onClick={() => handleOverride(record, 'half_day')} title="Mark Half Day" className="w-6 h-6 flex items-center justify-center bg-sky-500/10 text-sky-400 border border-sky-500/20 text-[10px] font-bold rounded hover:bg-sky-500/20 transition-colors">H</button>
-                        <button onClick={() => handleOverride(record, 'absent')} title="Mark Absent" className="w-6 h-6 flex items-center justify-center bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[10px] font-bold rounded hover:bg-rose-500/20 transition-colors">A</button>
+                      <div className="flex flex-wrap items-center justify-center gap-1">
+                        <button onClick={() => handleOverride(record, 'present')} title="Mark Present" className="w-5 h-5 flex items-center justify-center bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-bold rounded hover:bg-emerald-500/20 transition-colors">P</button>
+                        <button onClick={() => handleOverride(record, 'half_day')} title="Mark Half Day" className="w-5 h-5 flex items-center justify-center bg-sky-500/10 text-sky-400 border border-sky-500/20 text-[9px] font-bold rounded hover:bg-sky-500/20 transition-colors">H</button>
+                        <button onClick={() => handleOverride(record, 'absent')} title="Mark Absent" className="w-5 h-5 flex items-center justify-center bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-bold rounded hover:bg-rose-500/20 transition-colors">A</button>
                       </div>
                     </td>
                   )}
@@ -482,7 +496,7 @@ const AttendanceHub = () => {
             )}
             {!loading && attendance.length === 0 && (
                 <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-slate-500">No attendance records found</td>
+                  <td colSpan="11" className="px-6 py-8 text-center text-slate-500">No attendance records found</td>
                 </tr>
               )}
             </tbody>

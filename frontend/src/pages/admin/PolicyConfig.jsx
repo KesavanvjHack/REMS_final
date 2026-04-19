@@ -33,6 +33,7 @@ const CustomTimePicker = ({ value, onChange }) => {
 
   return (
     <div className="flex items-center gap-2">
+      <label className="sr-only">Hour</label>
       <select 
         value={h12} 
         onChange={handleHour} 
@@ -41,6 +42,7 @@ const CustomTimePicker = ({ value, onChange }) => {
         {hours.map(h => <option key={h} value={h}>{h.toString().padStart(2, '0')}</option>)}
       </select>
       <span className="text-slate-400 font-bold">:</span>
+      <label className="sr-only">Minute</label>
       <select 
         value={minStr} 
         onChange={handleMin} 
@@ -48,6 +50,7 @@ const CustomTimePicker = ({ value, onChange }) => {
       >
         {mins.map(m => <option key={m} value={m}>{m}</option>)}
       </select>
+      <label className="sr-only">AM/PM</label>
       <select 
         value={ampm} 
         onChange={handleAmPm} 
@@ -143,9 +146,11 @@ const PolicyConfig = () => {
         <form onSubmit={handleSave} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Policy Name</label>
+              <label htmlFor="policyName" className="block text-sm font-medium text-slate-300 mb-2">Policy Name</label>
               <input
                 type="text"
+                id="policyName"
+                name="policy-name"
                 required
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
                 value={policy.name}
@@ -154,9 +159,11 @@ const PolicyConfig = () => {
             </div>
             
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Idle Threshold (Minutes)</label>
+              <label htmlFor="idleThreshold" className="block text-sm font-medium text-slate-300 mb-2">Idle Threshold (Minutes)</label>
               <input
                 type="number"
+                id="idleThreshold"
+                name="idle-threshold"
                 required
                 min="1"
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 transition-all"
@@ -168,9 +175,11 @@ const PolicyConfig = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Minimum Full-Day Hours</label>
+              <label htmlFor="minWorkHours" className="block text-sm font-medium text-slate-300 mb-2">Minimum Full-Day Hours</label>
               <input
                 type="number"
+                id="minWorkHours"
+                name="min-work-hours"
                 required
                 step="0.5"
                 min="0"
@@ -181,9 +190,11 @@ const PolicyConfig = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Present Hours</label>
+              <label htmlFor="presentHours" className="block text-sm font-medium text-slate-300 mb-2">Present Hours</label>
               <input
                 type="number"
+                id="presentHours"
+                name="present-hours"
                 required
                 step="0.5"
                 min="0"
@@ -195,9 +206,11 @@ const PolicyConfig = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Minimum Half-Day Hours</label>
+              <label htmlFor="halfDayHours" className="block text-sm font-medium text-slate-300 mb-2">Minimum Half-Day Hours</label>
               <input
                 type="number"
+                id="halfDayHours"
+                name="half-day-hours"
                 required
                 step="0.5"
                 min="0"
@@ -224,9 +237,11 @@ const PolicyConfig = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Session Timeout (Hours)</label>
+              <label htmlFor="sessionTimeout" className="block text-sm font-medium text-slate-300 mb-2">Session Timeout (Hours)</label>
               <input
                 type="number"
+                id="sessionTimeout"
+                name="session-timeout"
                 required
                 step="0.5"
                 min="0.5"
@@ -270,9 +285,11 @@ const PolicyConfig = () => {
 
         <div className="flex flex-col sm:flex-row items-end gap-6">
           <div className="flex-1 w-full max-w-xs">
-            <label className="block text-sm font-medium text-slate-300 mb-2">Target Date</label>
+            <label htmlFor="resetDate" className="block text-sm font-medium text-slate-300 mb-2">Target Date</label>
             <input
               type="date"
+              id="resetDate"
+              name="reset-date"
               className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500/50 transition-all outline-none"
               value={resetDate}
               onChange={(e) => setResetDate(e.target.value)}

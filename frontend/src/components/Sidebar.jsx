@@ -1,16 +1,25 @@
-import { NavLink } from 'react-router-dom';
-import { useContext } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
+import { useContext, useEffect } from 'react';
 import { AuthContext } from '../context/AuthContext';
 import { 
   HomeIcon, UsersIcon, ShieldCheckIcon, CalendarDaysIcon, 
   ChartBarIcon, DocumentTextIcon, ArrowDownTrayIcon,
   CheckBadgeIcon, ClockIcon, BuildingOfficeIcon,
   RectangleGroupIcon, Cog8ToothIcon, ClipboardDocumentCheckIcon,
-  ClipboardDocumentListIcon, FolderIcon, QueueListIcon, CurrencyDollarIcon
+  ClipboardDocumentListIcon, FolderIcon, QueueListIcon, CurrencyDollarIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline';
 
-const Sidebar = () => {
+const Sidebar = ({ isOpen, onClose }) => {
   const { user } = useContext(AuthContext);
+  const location = useLocation();
+
+  // Auto-close sidebar on mobile when route changes
+  useEffect(() => {
+    if (window.innerWidth < 1024 && isOpen) {
+      onClose();
+    }
+  }, [location.pathname]);
 
   if (!user) return null;
 
@@ -55,11 +64,21 @@ const Sidebar = () => {
   if (user.role === 'manager') links = managerLinks;
 
   return (
-    <div className="w-64 h-screen bg-slate-900 border-r border-slate-800 flex flex-col fixed inset-y-0 left-0 z-50">
-      <div className="flex items-center justify-center h-20 border-b border-slate-800">
+    <div className={`
+      w-64 h-screen bg-slate-900 border-r border-slate-800 flex flex-col fixed inset-y-0 left-0 z-50 
+      transition-transform duration-300 transform 
+      ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+    `}>
+      <div className="flex items-center justify-between px-6 h-20 border-b border-slate-800">
         <h1 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent transform transition hover:scale-105">
           REMS
         </h1>
+        <button 
+          onClick={onClose}
+          className="lg:hidden p-2 text-slate-400 hover:text-white"
+        >
+          <XMarkIcon className="h-6 w-6" />
+        </button>
       </div>
       
       <div className="flex-1 overflow-y-auto py-6 flex flex-col gap-2 px-4">

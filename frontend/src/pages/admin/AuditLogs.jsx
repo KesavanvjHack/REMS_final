@@ -136,7 +136,7 @@ const AuditLogs = () => {
           <div className="p-2 bg-indigo-500/20 rounded-lg">
             <ClipboardDocumentListIcon className="h-6 w-6 text-indigo-400" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">System Audit Trails</h1>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">System Audit Trails</h1>
         </div>
 
         <div className="flex items-center gap-2 bg-slate-900/50 p-1 rounded-lg border border-slate-700 w-fit">
@@ -169,6 +169,8 @@ const AuditLogs = () => {
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">Category</label>
             <select
+              id="exportCategory"
+              name="export-category"
               className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none"
               value={exportCategory}
               onChange={(e) => setExportCategory(e.target.value)}
@@ -184,6 +186,8 @@ const AuditLogs = () => {
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-2">Select User</label>
               <select
+                id="exportUserId"
+                name="export-user-id"
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none"
                 value={exportUserId}
                 onChange={(e) => setExportUserId(e.target.value)}
@@ -199,6 +203,8 @@ const AuditLogs = () => {
           <div className={exportCategory === 'particular_employee' ? '' : 'lg:col-span-1'}>
             <label className="block text-sm font-medium text-slate-300 mb-2">Time Range</label>
             <select
+              id="exportTimeRange"
+              name="export-time-range"
               className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none"
               value={exportTimeRange}
               onChange={(e) => setExportTimeRange(e.target.value)}
@@ -215,6 +221,8 @@ const AuditLogs = () => {
                 <label className="block text-sm font-medium text-slate-300 mb-2">From Date</label>
                 <input
                   type="date"
+                  id="exportFromDate"
+                  name="export-from-date"
                   className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
                   value={exportFromDate}
                   onChange={(e) => setExportFromDate(e.target.value)}
@@ -224,6 +232,8 @@ const AuditLogs = () => {
                 <label className="block text-sm font-medium text-slate-300 mb-2">To Date</label>
                 <input
                   type="date"
+                  id="exportToDate"
+                  name="export-to-date"
                   className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
                   value={exportToDate}
                   onChange={(e) => setExportToDate(e.target.value)}
@@ -235,6 +245,8 @@ const AuditLogs = () => {
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-2">Format</label>
             <select
+              id="exportFormat"
+              name="export-format"
               className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none"
               value={exportFormat}
               onChange={(e) => setExportFormat(e.target.value)}
@@ -248,10 +260,10 @@ const AuditLogs = () => {
             <button
               onClick={handleExport}
               disabled={isExporting}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white py-2.5 rounded-lg font-medium shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-2"
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white py-2.5 rounded-lg font-medium shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-2 whitespace-nowrap"
             >
               <ArrowDownTrayIcon className="h-5 w-5" />
-              {isExporting ? 'Exporting...' : 'Export Logs'}
+              <span>{isExporting ? 'Exporting...' : 'Export Logs'}</span>
             </button>
           </div>
         </div>

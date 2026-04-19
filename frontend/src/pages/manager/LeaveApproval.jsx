@@ -14,6 +14,7 @@ const LeaveApproval = () => {
   const [endDate, setEndDate] = useState('');
   const [exportType, setExportType] = useState('custom');
   const [exportEmployee, setExportEmployee] = useState('all');
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     fetchLeaves();
@@ -162,6 +163,8 @@ const LeaveApproval = () => {
         <div className="flex flex-col md:flex-row flex-wrap items-start md:items-center gap-3 bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
           <div className="flex gap-2 flex-wrap">
             <select
+              id="exportEmployee"
+              name="export-employee"
               value={exportEmployee}
               onChange={(e) => setExportEmployee(e.target.value)}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -172,6 +175,8 @@ const LeaveApproval = () => {
               ))}
             </select>
             <select 
+              id="exportType"
+              name="export-type"
               value={exportType}
               onChange={(e) => handleQuickSelect(e.target.value)}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -185,6 +190,8 @@ const LeaveApproval = () => {
           <div className="flex items-center gap-2">
             <input 
               type="date" 
+              id="exportStartDate"
+              name="export-start-date"
               value={startDate}
               onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
@@ -192,19 +199,22 @@ const LeaveApproval = () => {
             <span className="text-slate-500">to</span>
             <input 
               type="date" 
+              id="exportEndDate"
+              name="export-end-date"
               value={endDate}
               onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
             />
           </div>
 
-          <button 
-            onClick={handleExport}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium"
-          >
-            <ArrowDownTrayIcon className="h-4 w-4" />
-            Export CSV
-          </button>
+            <button
+              onClick={handleExport}
+              disabled={isExporting}
+              className="p-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 text-white rounded-lg transition-all flex items-center justify-center gap-2 font-medium whitespace-nowrap w-full sm:w-auto"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              <span className="text-xs">{isExporting ? 'Exporting...' : 'Export CSV'}</span>
+            </button>
         </div>
       </div>
 

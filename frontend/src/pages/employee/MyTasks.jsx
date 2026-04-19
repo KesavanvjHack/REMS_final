@@ -115,6 +115,8 @@ const MyTasks = () => {
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 bg-slate-800/50 p-3 rounded-xl border border-slate-700/50">
           <div className="flex gap-2">
             <select 
+              id="exportType"
+              name="export-type"
               value={exportType}
               onChange={(e) => handleQuickSelect(e.target.value)}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -123,18 +125,25 @@ const MyTasks = () => {
               <option value="weekly">This Week</option>
               <option value="monthly">This Month</option>
             </select>
+            <label htmlFor="exportType" className="sr-only">Select Export Time Range</label>
           </div>
           
           <div className="flex items-center gap-2">
+            <label htmlFor="exportStartDate" className="sr-only">Export Start Date</label>
             <input 
               type="date" 
+              id="exportStartDate"
+              name="export-start-date"
               value={startDate}
               onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
             />
             <span className="text-slate-500">to</span>
+            <label htmlFor="exportEndDate" className="sr-only">Export End Date</label>
             <input 
               type="date" 
+              id="exportEndDate"
+              name="export-end-date"
               value={endDate}
               onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"

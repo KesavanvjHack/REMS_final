@@ -1,4 +1,4 @@
-import { useState, useContext } from 'react';
+import { useState, useContext, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { AuthContext } from '../context/AuthContext';
 import { toast } from 'react-hot-toast';
@@ -11,8 +11,17 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login } = useContext(AuthContext);
+  const { login, user } = useContext(AuthContext);
   const navigate = useNavigate();
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      if (user.role === 'admin') navigate('/admin');
+      else if (user.role === 'manager') navigate('/manager');
+      else navigate('/employee');
+    }
+  }, [user, navigate]);
 
   const handleCredentialsSubmit = async (e) => {
     e.preventDefault();
@@ -66,31 +75,37 @@ const Login = () => {
           {step === 1 ? (
             <form onSubmit={handleCredentialsSubmit} className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Email Address</label>
+                <label htmlFor="email" className="block text-sm font-medium text-slate-300 mb-2">Email Address</label>
                 <div className="relative">
                   <EnvelopeIcon className="w-5 h-5 text-slate-500 absolute left-3 top-3" />
                   <input
                     type="email"
+                    id="email"
+                    name="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl py-2.5 pl-10 pr-4 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                     placeholder="Enter your corporate email"
                     required
+                    autoComplete="email"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">Password</label>
+                <label htmlFor="password" className="block text-sm font-medium text-slate-300 mb-2">Password</label>
                 <div className="relative">
                   <KeyIcon className="w-5 h-5 text-slate-500 absolute left-3 top-3" />
                   <input
                     type="password"
+                    id="password"
+                    name="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full bg-slate-950 border border-slate-700 rounded-xl py-2.5 pl-10 pr-4 text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                     placeholder="••••••••"
                     required
+                    autoComplete="current-password"
                   />
                 </div>
               </div>
@@ -111,15 +126,18 @@ const Login = () => {
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2 text-center">Enter Verification Code</label>
+                <label htmlFor="otp" className="block text-sm font-medium text-slate-300 mb-2 text-center">Enter Verification Code</label>
                 <input
                   type="text"
+                  id="otp"
+                  name="otp"
                   maxLength="6"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl py-4 text-center text-3xl tracking-[1em] font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
                   placeholder="------"
                   required
+                  autoComplete="one-time-code"
                 />
               </div>
 

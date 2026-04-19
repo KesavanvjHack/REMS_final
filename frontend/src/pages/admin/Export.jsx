@@ -73,6 +73,7 @@ const Export = () => {
               `}>
                 <input 
                   type="radio" 
+                  id="reportAttendance"
                   name="reportType" 
                   value="attendance" 
                   checked={reportType === 'attendance'} 
@@ -91,6 +92,7 @@ const Export = () => {
               `}>
                 <input 
                   type="radio" 
+                  id="reportLeave"
                   name="reportType" 
                   value="leave" 
                   checked={reportType === 'leave'} 
@@ -109,6 +111,7 @@ const Export = () => {
               `}>
                 <input 
                   type="radio" 
+                  id="reportAudit"
                   name="reportType" 
                   value="audit" 
                   checked={reportType === 'audit'} 
@@ -127,6 +130,7 @@ const Export = () => {
               `}>
                 <input 
                   type="radio" 
+                  id="reportPayroll"
                   name="reportType" 
                   value="payroll" 
                   checked={reportType === 'payroll'} 
@@ -145,6 +149,7 @@ const Export = () => {
               <label className="flex items-center gap-2 cursor-pointer group">
                 <input 
                   type="radio" 
+                  id="formatCSV"
                   name="format" 
                   value="csv" 
                   checked={format === 'csv'} 
@@ -157,6 +162,7 @@ const Export = () => {
               <label className="flex items-center gap-2 cursor-pointer group">
                 <input 
                   type="radio" 
+                  id="formatExcel"
                   name="format" 
                   value="excel" 
                   checked={format === 'excel'} 

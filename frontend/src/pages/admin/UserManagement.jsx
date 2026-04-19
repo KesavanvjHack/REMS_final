@@ -194,12 +194,14 @@ const UserManagement = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-white">User Management</h1>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">User Management</h1>
         
         <div className="flex flex-col xl:flex-row items-start xl:items-center gap-3">
           <div className="flex flex-col md:flex-row flex-wrap items-start md:items-center gap-3 bg-slate-800/50 p-2 rounded-xl border border-slate-700/50">
             <div className="flex gap-2 flex-wrap">
               <select
+                id="exportRole"
+                name="export-role"
                 value={exportRole}
                 onChange={(e) => setExportRole(e.target.value)}
                 className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -211,6 +213,8 @@ const UserManagement = () => {
               </select>
 
               <select 
+                id="exportType"
+                name="export-type"
                 value={exportType}
                 onChange={(e) => handleQuickSelect(e.target.value)}
                 className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -224,6 +228,8 @@ const UserManagement = () => {
             <div className="flex items-center gap-2">
               <input 
                 type="date" 
+                id="exportStartDate"
+                name="export-start-date"
                 value={startDate}
                 onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
                 className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
@@ -231,6 +237,8 @@ const UserManagement = () => {
               <span className="text-slate-500 text-sm">to</span>
               <input 
                 type="date" 
+                id="exportEndDate"
+                name="export-end-date"
                 value={endDate}
                 onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
                 className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
@@ -239,17 +247,17 @@ const UserManagement = () => {
             
             <button 
               onClick={handleExport}
-              className="flex items-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
+              className="flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap w-full sm:w-auto"
             >
               <ArrowDownTrayIcon className="h-4 w-4" />
-              Export
+              <span>Export</span>
             </button>
           </div>
 
           <button 
              onClick={openAddModal}
-             className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all flex items-center gap-2">
-            <span>+</span> Add User
+             className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg font-medium shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all flex items-center justify-center gap-2 whitespace-nowrap w-full xl:w-auto">
+            <span className="text-lg">+</span> <span>Add User</span>
           </button>
         </div>
       </div>
@@ -364,33 +372,33 @@ const UserManagement = () => {
               
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-1">First Name *</label>
-                  <input required type="text" name="first_name" value={formData.first_name} onChange={handleChange}
+                  <label htmlFor="modalFirstName" className="block text-sm font-medium text-slate-400 mb-1">First Name *</label>
+                  <input required type="text" id="modalFirstName" name="first_name" value={formData.first_name} onChange={handleChange}
                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-1">Last Name *</label>
-                  <input required type="text" name="last_name" value={formData.last_name} onChange={handleChange}
+                  <label htmlFor="modalLastName" className="block text-sm font-medium text-slate-400 mb-1">Last Name *</label>
+                  <input required type="text" id="modalLastName" name="last_name" value={formData.last_name} onChange={handleChange}
                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-400 mb-1">Email (Login ID) *</label>
-                <input required type="email" name="email" value={formData.email} onChange={handleChange} disabled={!!editingUser}
+                <label htmlFor="modalEmail" className="block text-sm font-medium text-slate-400 mb-1">Email (Login ID) *</label>
+                <input required type="email" id="modalEmail" name="email" value={formData.email} onChange={handleChange} disabled={!!editingUser}
                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 disabled:opacity-50" />
               </div>
 
               {!editingUser && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Password *</label>
-                    <input required type="password" name="password" value={formData.password} onChange={handleChange}
+                    <label htmlFor="modalPassword" className="block text-sm font-medium text-slate-400 mb-1">Password *</label>
+                    <input required type="password" id="modalPassword" name="password" value={formData.password} onChange={handleChange}
                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-1">Confirm Password *</label>
-                    <input required type="password" name="confirm_password" value={formData.confirm_password} onChange={handleChange}
+                    <label htmlFor="modalConfirmPassword" className="block text-sm font-medium text-slate-400 mb-1">Confirm Password *</label>
+                    <input required type="password" id="modalConfirmPassword" name="confirm_password" value={formData.confirm_password} onChange={handleChange}
                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
                   </div>
                 </div>
@@ -398,8 +406,8 @@ const UserManagement = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-1">Role</label>
-                  <select name="role" value={formData.role} onChange={handleChange}
+                  <label htmlFor="modalRole" className="block text-sm font-medium text-slate-400 mb-1">Role</label>
+                  <select id="modalRole" name="role" value={formData.role} onChange={handleChange}
                           className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
                     <option value="employee">Employee</option>
                     <option value="manager">Manager</option>
@@ -409,8 +417,8 @@ const UserManagement = () => {
                 <div>
                   <label className="block text-sm font-medium text-slate-400 mb-1">Status</label>
                   <div className="flex items-center h-10 mt-1">
-                     <label className="relative inline-flex items-center cursor-pointer">
-                       <input type="checkbox" name="is_active" checked={formData.is_active} onChange={handleChange} className="sr-only peer" />
+                     <label htmlFor="modalIsActive" className="relative inline-flex items-center cursor-pointer">
+                       <input type="checkbox" id="modalIsActive" name="is_active" checked={formData.is_active} onChange={handleChange} className="sr-only peer" />
                        <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                        <span className="ml-3 text-sm font-medium text-slate-300">{formData.is_active ? 'Active' : 'Inactive'}</span>
                      </label>
@@ -420,8 +428,8 @@ const UserManagement = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-400 mb-1">Department</label>
-                  <select name="department" value={formData.department} onChange={handleChange}
+                  <label htmlFor="modalDepartment" className="block text-sm font-medium text-slate-400 mb-1">Department</label>
+                  <select id="modalDepartment" name="department" value={formData.department} onChange={handleChange}
                           className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
                     <option value="">None</option>
                     {departments.map(d => (
@@ -430,8 +438,8 @@ const UserManagement = () => {
                   </select>
                 </div>
                 <div>
-                   <label className="block text-sm font-medium text-slate-400 mb-1">Manager</label>
-                   <select name="manager" value={formData.manager} onChange={handleChange}
+                   <label htmlFor="modalManager" className="block text-sm font-medium text-slate-400 mb-1">Manager</label>
+                   <select id="modalManager" name="manager" value={formData.manager} onChange={handleChange}
                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
                      <option value="">None</option>
                      {managers.map(m => (

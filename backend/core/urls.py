@@ -11,13 +11,13 @@ from .views import (
     RequestOTPView, VerifyOTPView, RegisterProfileView,
     UserViewSet, DepartmentViewSet,
     AttendanceViewSet, WorkSessionView, BreakSessionView,
-    IdleView, RealTimeStatusView, TeamStatusView, TeamTimesheetView,
+    IdleView, SyncSessionView, RealTimeStatusView, TeamStatusView, TeamTimesheetView,
     LeaveRequestViewSet, HolidayViewSet,
     FlaggedAttendanceView, AttendancePolicyViewSet, TeamListView,
     ReportView, AuditLogViewSet, ExportView,
     IPWhitelistViewSet, ShiftViewSet, ProjectViewSet, TaskViewSet,
     AppUsageLogViewSet, AlertViewSet, DocumentViewSet, ExpenseViewSet,
-    NotificationViewSet
+    NotificationViewSet, ScreenCaptureViewSet
 )
 
 router = DefaultRouter()
@@ -39,6 +39,7 @@ router.register(r'alerts', AlertViewSet, basename='alerts')
 router.register(r'documents', DocumentViewSet, basename='documents')
 router.register(r'expenses', ExpenseViewSet, basename='expenses')
 router.register(r'notifications', NotificationViewSet, basename='notifications')
+router.register(r'screen-captures', ScreenCaptureViewSet, basename='screen-captures')
 
 urlpatterns = [
     # Auth
@@ -59,6 +60,7 @@ urlpatterns = [
 
     # Idle Detection (Module 7)
     path('sessions/idle/', IdleView.as_view(), name='idle'),
+    path('sessions/sync/', SyncSessionView.as_view(), name='session-sync'),
 
     # Real-Time Status (Module 8)
     path('status/me/', RealTimeStatusView.as_view(), name='my-status'),

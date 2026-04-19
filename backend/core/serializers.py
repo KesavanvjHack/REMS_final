@@ -146,9 +146,12 @@ class AttendanceSerializer(serializers.ModelSerializer):
     total_idle_seconds = serializers.SerializerMethodField()
     effective_work_seconds = serializers.SerializerMethodField()
     work_hours = serializers.SerializerMethodField()
+    missing_seconds = serializers.SerializerMethodField()
     live_status = serializers.SerializerMethodField()
     first_login = serializers.SerializerMethodField()
     last_logout = serializers.SerializerMethodField()
+    shift_start = serializers.SerializerMethodField()
+    shift_end = serializers.SerializerMethodField()
     has_completed_session = serializers.SerializerMethodField()
 
     class Meta:
@@ -156,8 +159,9 @@ class AttendanceSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'user_email', 'user_name', 'user_role',
             'date', 'status', 'live_status', 'first_login', 'last_logout',
+            'shift_start', 'shift_end',
             'total_work_seconds', 'total_break_seconds', 'total_idle_seconds',
-            'effective_work_seconds', 'work_hours', 'has_completed_session',
+            'effective_work_seconds', 'work_hours', 'missing_seconds', 'has_completed_session',
             'is_flagged', 'flag_reason', 'manager_remark',
             'reviewed_by', 'reviewed_at', 'created_at', 'updated_at',
         ]
@@ -167,67 +171,128 @@ class AttendanceSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
 
+    def merge_intervals(self, intervals):
+        if not intervals: return []
+        intervals.sort(key=lambda x: x[0])
+        merged = [list(intervals[0])]
+        for next_start, next_end in intervals[1:]:
+            prev_start, prev_end = merged[-1]
+            if next_start < prev_end:
+                merged[-1][1] = max(prev_end, next_end)
+            else:
+                merged.append([next_start, next_end])
+        return merged
+
+    def sum_intervals(self, intervals):
+        return sum((end - start).total_seconds() for start, end in intervals)
+
+    def get_gross_seconds(self, obj):
+        """Returns Gross Logged-in Seconds by calculating the Union of all sessions"""
+        now = timezone.now()
+        intervals = [(s.start_time, s.end_time or now) for s in obj.work_sessions.all() if (s.end_time or now) > s.start_time]
+        return int(self.sum_intervals(self.merge_intervals(intervals)))
+
     def get_total_work_seconds(self, obj):
-        total = obj.total_work_seconds
-        # Use .all() to leverage prefetch cache
-        sessions = list(obj.work_sessions.all())
-        latest_session = sessions[0] if sessions else None
-        
-        if latest_session and latest_session.end_time is None:
-            total += int((timezone.now() - latest_session.start_time).total_seconds())
-        return total
+        """Returns Net Productive Seconds: Gross - Breaks - Idle"""
+        gross = self.get_gross_seconds(obj)
+        breaks = self.get_total_break_seconds(obj)
+        idle = self.get_total_idle_seconds(obj)
+        return max(0, gross - breaks - idle)
 
     def get_total_break_seconds(self, obj):
-        total = obj.total_break_seconds
-        sessions = list(obj.work_sessions.all())
-        latest_session = sessions[0] if sessions else None
-        
-        if latest_session and latest_session.end_time is None:
-            # Use .all() on pre-ordered prefetch
-            breaks = list(latest_session.break_sessions.all())
-            latest_break = breaks[0] if breaks else None
-            if latest_break and latest_break.end_time is None:
-                total += int((timezone.now() - latest_break.start_time).total_seconds())
+        """Returns total break seconds by summing all break logs"""
+        now = timezone.now()
+        total = 0
+        for ws in obj.work_sessions.all():
+            for bs in ws.break_sessions.all():
+                end = bs.end_time or now
+                # Match recalculate_status intersection logic for consistency
+                ws_start = ws.start_time
+                ws_end = ws.end_time or now
+                eff_start = max(bs.start_time, ws_start)
+                eff_end = min(end, ws_end)
+                if eff_end > eff_start:
+                    total += int((eff_end - eff_start).total_seconds())
         return total
 
     def get_total_idle_seconds(self, obj):
-        total = obj.total_idle_seconds
-        sessions = list(obj.work_sessions.all())
-        latest_session = sessions[0] if sessions else None
-        
-        if latest_session and latest_session.end_time is None:
-            # Use .all() on pre-ordered prefetch
-            idles = list(latest_session.idle_logs.all())
-            latest_idle = idles[0] if idles else None
-            if latest_idle and latest_idle.end_time is None:
-                total += int((timezone.now() - latest_idle.start_time).total_seconds())
-        return total
+        """Returns total idle seconds by summing union of logs intersected with work"""
+        now = timezone.now()
+        all_idles = []
+        for ws in obj.work_sessions.all():
+            ws_start, ws_end = ws.start_time, ws.end_time or now
+            for il in ws.idle_logs.all():
+                il_start, il_end = il.start_time, il.end_time or now
+                eff_start = max(il_start, ws_start)
+                eff_end = min(il_end, ws_end)
+                if eff_end > eff_start:
+                    all_idles.append((eff_start, eff_end))
+        return int(self.sum_intervals(self.merge_intervals(all_idles)))
 
     def get_effective_work_seconds(self, obj):
-        work = self.get_total_work_seconds(obj)
-        breaks = self.get_total_break_seconds(obj)
-        idle = self.get_total_idle_seconds(obj)
-        return max(0, work - breaks - idle)
+        """Redundant but kept for internal calls: Returns Net Productive Seconds"""
+        return self.get_total_work_seconds(obj)
 
     def get_work_hours(self, obj):
+        """Returns Effective (Net) hours for reports/dashboard."""
         total = self.get_total_work_seconds(obj)
         return round(total / 3600, 2)
 
-    def get_live_status(self, obj):
-        sessions = list(obj.work_sessions.all())
-        latest_session = sessions[0] if sessions else None
+    def get_missing_seconds(self, obj):
+        """Calculate time gap: Shift Window Duration - Intersection(Work, Shift Window)"""
+        from .models import AttendancePolicy
+        import datetime
+        from django.utils import timezone as django_timezone
         
-        if latest_session and latest_session.end_time is None:
-            breaks = list(latest_session.break_sessions.all())
-            latest_break = breaks[0] if breaks else None
-            if latest_break and latest_break.end_time is None:
+        policy = AttendancePolicy.objects.filter(is_active=True).first()
+        if not policy:
+            return 0
+            
+        # 1. Shift Window Definition (Local to the attendance date)
+        att_date = obj.date 
+        tz = django_timezone.get_current_timezone()
+        shift_start = django_timezone.make_aware(datetime.datetime.combine(att_date, policy.shift_start_time), tz)
+        shift_end = django_timezone.make_aware(datetime.datetime.combine(att_date, policy.shift_end_time), tz)
+        
+        if shift_end <= shift_start: 
+            shift_end += datetime.timedelta(days=1)
+            
+        # 2. Live Adaptation (Time-Passed Logic)
+        # For 'Today', we only compare work against the time that has ALREADY PASSED
+        now = django_timezone.now()
+        
+        # Determine the moment in the shift we are currently evaluating
+        # (Capped at shift_end for past/completed days)
+        effective_now = min(now, shift_end)
+        
+        # Baseline: How many seconds SHOULD have been worked so far?
+        # If the shift hasn't started yet, expected time is 0.
+        expected_duration_so_far = max(0, (effective_now - shift_start).total_seconds())
+        
+        # 3. Intersection Math: Only count work sessions that happened WITHIN the shift window
+        sessions = [(s.start_time, s.end_time or now) for s in obj.work_sessions.all() if (s.end_time or now) > s.start_time]
+        merged_presence = self.merge_intervals(sessions)
+        
+        intersection_duration = 0
+        for start, end in merged_presence:
+            # Shift window intersection (Capped at shift_end)
+            win_start = max(start, shift_start)
+            win_end = min(end, shift_end)
+            if win_end > win_start:
+                intersection_duration += (win_end - win_start).total_seconds()
+        
+        # 4. Gap Result
+        # Gap = (Target Time Passed) - (Actual Work during that time)
+        return max(0, int(expected_duration_so_far - intersection_duration))
+
+    def get_live_status(self, obj):
+        active_session = obj.work_sessions.filter(end_time__isnull=True).first()
+        
+        if active_session:
+            if active_session.break_sessions.filter(end_time__isnull=True).exists():
                 return 'On Break'
-                
-            idles = list(latest_session.idle_logs.all())
-            latest_idle = idles[0] if idles else None
-            if latest_idle and latest_idle.end_time is None:
+            if active_session.idle_logs.filter(end_time__isnull=True).exists():
                 return 'Idle'
-                
             return 'Working'
         return 'Offline'
 
@@ -240,15 +305,22 @@ class AttendanceSerializer(serializers.ModelSerializer):
         return first_session.start_time.isoformat()
 
     def get_last_logout(self, obj):
-        # Use .all() and filter in memory to find the most recently ended session
         sessions = list(obj.work_sessions.all())
         ended_sessions = [s for s in sessions if s.end_time is not None]
-        # sessions are already ordered by -start_time, but we want the one that ended latest
         if not ended_sessions:
             return None
-        
         last_ended = max(ended_sessions, key=lambda s: s.end_time)
         return last_ended.end_time.isoformat()
+
+    def get_shift_start(self, obj):
+        from .models import AttendancePolicy
+        policy = AttendancePolicy.objects.filter(is_active=True).first()
+        return policy.shift_start_time.strftime('%I:%M %p') if policy else "09:30 AM"
+
+    def get_shift_end(self, obj):
+        from .models import AttendancePolicy
+        policy = AttendancePolicy.objects.filter(is_active=True).first()
+        return policy.shift_end_time.strftime('%I:%M %p') if policy else "05:30 PM"
 
     def get_has_completed_session(self, obj):
         # Use prefetched work_sessions if available
@@ -279,7 +351,8 @@ class IdleLogSerializer(serializers.ModelSerializer):
 class WorkSessionSerializer(serializers.ModelSerializer):
     break_sessions = BreakSessionSerializer(many=True, read_only=True)
     idle_logs = IdleLogSerializer(many=True, read_only=True)
-    duration_seconds = serializers.IntegerField(read_only=True)
+    duration_seconds = serializers.ReadOnlyField()
+    ip_address = serializers.ReadOnlyField()
 
     class Meta:
         model = WorkSession
@@ -349,6 +422,7 @@ class HolidaySerializer(serializers.ModelSerializer):
 class AuditLogSerializer(serializers.ModelSerializer):
     user_email = serializers.SerializerMethodField()
     user_name = serializers.SerializerMethodField()
+    ip_address = serializers.ReadOnlyField()
 
     def get_user_email(self, obj):
         return obj.user.email if obj.user else None
@@ -384,10 +458,13 @@ class AttendanceReviewSerializer(serializers.Serializer):
 from .models import (
     User, AttendancePolicy, Attendance, BreakSession, IdleLog, WorkSession,
     LeaveRequest, Holiday, AuditLog, IPWhitelist, Shift, Project, Task,
-    AppUsageLog, Alert, Document, Expense, Department, Notification
+    AppUsageLog, Alert, Document, Expense, Department, Notification,
+    ScreenCapture
 )
 
 class IPWhitelistSerializer(serializers.ModelSerializer):
+    ip_address = serializers.CharField() # Use CharField to avoid DRF GenericIPAddressField bug
+
     class Meta:
         model = IPWhitelist
         fields = '__all__'
@@ -453,3 +530,13 @@ class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notification
         fields = '__all__'
+
+
+class ScreenCaptureSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source='user.full_name', read_only=True)
+    user_email = serializers.CharField(source='user.email', read_only=True)
+
+    class Meta:
+        model = ScreenCapture
+        fields = ['id', 'user', 'user_name', 'user_email', 'work_session', 'image', 'timestamp']
+        read_only_fields = ['id', 'user', 'user_name', 'user_email', 'timestamp']

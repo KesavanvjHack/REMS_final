@@ -19,7 +19,8 @@ from datetime import date, timedelta
 
 from .models import (
     User, Department, AttendancePolicy, Attendance,
-    WorkSession, BreakSession, IdleLog, LeaveRequest, Holiday, AuditLog, OTPRecord, Notification
+    WorkSession, BreakSession, IdleLog, LeaveRequest, Holiday, AuditLog, OTPRecord, Notification,
+    ScreenCapture
 )
 from .serializers import (
     UserListSerializer, UserDetailSerializer, UserCreateSerializer,
@@ -28,6 +29,7 @@ from .serializers import (
     WorkSessionSerializer, BreakSessionSerializer, IdleLogSerializer,
     LeaveRequestSerializer, LeaveApplySerializer, LeaveReviewSerializer,
     HolidaySerializer, AuditLogSerializer, AttendanceReviewSerializer, NotificationSerializer,
+    ScreenCaptureSerializer,
 )
 from .permissions import IsAdmin, IsManager, IsEmployee, IsOwnerOrManager
 from .services import (
@@ -597,16 +599,21 @@ class WorkSessionView(APIView):
     def get(self, request):
         """Get today's active work session."""
         today = date.today()
-        attendance = Attendance.objects.filter(user=request.user, date=today).first()
-        if not attendance:
-            return Response({'active_session': None, 'attendance': None})
+        try:
+            attendance = Attendance.objects.filter(user=request.user, date=today).first()
+            if not attendance:
+                return Response({'active_session': None, 'attendance': None})
 
-        open_session = WorkSession.objects.filter(
-            attendance=attendance, end_time__isnull=True
-        ).first()
-        session_data = WorkSessionSerializer(open_session).data if open_session else None
-        attendance_data = AttendanceSerializer(attendance).data
-        return Response({'active_session': session_data, 'attendance': attendance_data})
+            open_session = WorkSession.objects.filter(
+                attendance=attendance, end_time__isnull=True
+            ).first()
+            session_data = WorkSessionSerializer(open_session).data if open_session else None
+            attendance_data = AttendanceSerializer(attendance).data
+            return Response({'active_session': session_data, 'attendance': attendance_data})
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).exception("Unexpected error during session fetch")
+            return Response({'error': f'System Error: {str(e)}'}, status=500)
 
     def post(self, request):
         """Start work session."""
@@ -620,18 +627,33 @@ class WorkSessionView(APIView):
                     'session': WorkSessionSerializer(session).data,
                 })
             except ValueError as e:
-                return Response({'error': str(e)}, status=400)
+                error_msg = str(e)
+                # Only return known business-logic errors to the user as 400
+                known_errors = ['Shift has not started', 'already checked out', 'restricted']
+                if any(phrase in error_msg for phrase in known_errors):
+                    return Response({'error': error_msg}, status=400)
+                # Unknown ValueError — return as 500 with actual detail for debugging
+                return Response({'error': f'System Error: {error_msg}'}, status=500)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).exception('Critical error in start_session')
+                return Response({'error': f'Unexpected System Error: {str(e)}'}, status=500)
         elif action == 'stop':
-            session, stopped = WorkSessionService.stop_session(request.user)
-            if not stopped:
-                return Response({'detail': 'No active session to stop.'}, status=400)
-            today = date.today()
-            attendance = Attendance.objects.get(user=request.user, date=today)
-            return Response({
-                'status': 'stopped',
-                'session': WorkSessionSerializer(session).data,
-                'attendance': AttendanceSerializer(attendance).data,
-            })
+            try:
+                session, stopped = WorkSessionService.stop_session(request.user)
+                if not stopped:
+                    return Response({'detail': 'No active session to stop.'}, status=400)
+                today = date.today()
+                attendance = Attendance.objects.get(user=request.user, date=today)
+                return Response({
+                    'status': 'stopped',
+                    'session': WorkSessionSerializer(session).data,
+                    'attendance': AttendanceSerializer(attendance).data,
+                })
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).exception('Critical error in stop_session')
+                return Response({'error': f'Unexpected System Error: {str(e)}'}, status=500)
         else:
             return Response({'detail': 'action must be "start" or "stop".'}, status=400)
 
@@ -681,7 +703,8 @@ class IdleView(APIView):
         action_type = request.data.get('action')
 
         if action_type == 'start':
-            idle_log, created = IdleService.start_idle(request.user)
+            start_time = request.data.get('start_time')
+            idle_log, created = IdleService.start_idle(request.user, start_time)
             if idle_log is None:
                 return Response({'detail': 'No active work session.'}, status=400)
             return Response({
@@ -700,6 +723,33 @@ class IdleView(APIView):
             return Response({'detail': 'action must be "start" or "stop".'}, status=400)
 
 
+class SyncSessionView(APIView):
+    """
+    Heartbeat sync from frontend.
+    Updates the current attendance record with the frontend's latest counters.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        try:
+            attendance, _ = AttendanceService.get_or_create_today(user)
+            
+            # Recalculate based on current logs (which include open sessions now)
+            AttendanceService.recalculate_status(attendance)
+            
+            return Response({
+                'status': 'synced',
+                'work_seconds': attendance.total_work_seconds,
+                'idle_seconds': attendance.total_idle_seconds,
+                'live_status': StatusService.get_user_status(user)['status']
+            })
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
+
+
+
+
 class RealTimeStatusView(APIView):
     """Module 8: Real-time status indicator for dashboard."""
     permission_classes = [IsAuthenticated]
@@ -714,19 +764,24 @@ class RealTimeStatusView(APIView):
         else:
             target_user = request.user
 
-        result = StatusService.get_user_status(target_user)
+        try:
+            result = StatusService.get_user_status(target_user)
 
-        # Serialize non-model fields
-        attendance_data = AttendanceSerializer(result['attendance']).data if result.get('attendance') else None
-        session_data = WorkSessionSerializer(result['session']).data if result.get('session') else None
+            # Serialize non-model fields
+            attendance_data = AttendanceSerializer(result['attendance']).data if result.get('attendance') else None
+            session_data = WorkSessionSerializer(result['session']).data if result.get('session') else None
 
-        return Response({
-            'status': result['status'],
-            'user_id': str(target_user.id),
-            'user_name': target_user.full_name,
-            'attendance': attendance_data,
-            'session': session_data,
-        })
+            return Response({
+                'status': result['status'],
+                'user_id': str(target_user.id),
+                'user_name': target_user.full_name,
+                'attendance': attendance_data,
+                'session': session_data,
+            })
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).exception(f"Real-time status fetch failed for user {target_user.id}")
+            return Response({'error': f"Status Fetch Error: {str(e)}"}, status=500)
 
 
 class TeamStatusView(APIView):
@@ -1776,3 +1831,60 @@ class NotificationViewSet(viewsets.ModelViewSet):
         notification.is_read = True
         notification.save()
         return Response({'status': 'Notification marked as read'})
+
+
+class ScreenCaptureViewSet(viewsets.ModelViewSet):
+    queryset = ScreenCapture.objects.all()
+    serializer_class = ScreenCaptureSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = ScreenCapture.objects.select_related('user').all()
+        
+        if user.role == 'admin':
+            return qs
+        if user.role == 'manager':
+            # Managers can see their own + subordinates
+            subordinate_ids = user.subordinates.values_list('id', flat=True)
+            return qs.filter(Q(user=user) | Q(user_id__in=subordinate_ids))
+        
+        # Employees can only see their own (though they usually only upload)
+        return qs.filter(user=user)
+
+    def perform_create(self, serializer):
+        # Automatically assign the uploading user
+        serializer.save(user=self.request.user)
+
+    @action(detail=False, methods=['get'], url_path='latest')
+    def latest(self, request):
+        """Get the most recent screenshot for each active employee (Admin/Manager only)."""
+        if request.user.role not in ['admin', 'manager']:
+            return Response({'detail': 'Unauthorized.'}, status=403)
+
+        # Get the latest capture for each user in the visible scope (subordinates/all)
+        queryset = self.get_queryset()
+        
+        # MySQL doesn't support LIMIT in IN subqueries. 
+        # We'll use a more compatible approach: 
+        # 1. Get the latest timestamp for each user.
+        # 2. Fetch the records matching those user/timestamp pairs.
+        from django.db.models import Max
+        latest_stamps = queryset.values('user').annotate(max_ts=Max('timestamp'))
+        
+        # Build a filter for the latest records
+        if not latest_stamps:
+            return Response([])
+
+        # Filter the queryset to only include those exact user/timestamp matches
+        # Note: In rare cases of exact same timestamp, this might return multiple, 
+        # but for screenshots it's highly unlikely and acceptable.
+        from django.db.models import Q
+        filter_q = Q()
+        for entry in latest_stamps:
+            filter_q |= Q(user_id=entry['user'], timestamp=entry['max_ts'])
+        
+        latest_captures = ScreenCapture.objects.filter(filter_q).select_related('user')
+
+        serializer = self.get_serializer(latest_captures, many=True)
+        return Response(serializer.data)

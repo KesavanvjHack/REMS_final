@@ -16,12 +16,17 @@ export const AuthProvider = ({ children }) => {
   const [lastActivity, setLastActivity] = useState(Date.now());
   const [showWarning, setShowWarning] = useState(false);
   const [warningTimeLeft, setWarningTimeLeft] = useState('');
+  const [isWithinShift, setIsWithinShift] = useState(true);
   
-  // Real-time Notifications State
   const [notifications, setNotifications] = useState([]);
   
   const wsRef = useRef(null);
   const heartbeatRef = useRef(null);
+  const lastActivityRef = useRef(Date.now());
+  // Real-time Idle Logic: Derived from the Attendance Policy (minutes -> seconds)
+  const getIdleThreshold = useCallback(() => {
+    return (policy?.idle_threshold_minutes || 15) * 60;
+  }, [policy]);
 
   const disconnectWebSocket = useCallback(() => {
     if (heartbeatRef.current) {
@@ -38,6 +43,7 @@ export const AuthProvider = ({ children }) => {
     if (wsRef.current || !currentUser) return;
     try {
       const ws = new WebSocket('ws://localhost:8000/ws/status/');
+      
       ws.onopen = () => {
         console.log('Status WebSocket Connected');
         if (currentUser) {
@@ -49,24 +55,26 @@ export const AuthProvider = ({ children }) => {
           }, 30000);
         }
       };
+
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
+        
+        // Debug Logging
+        if (data.type !== 'presence_update') {
+            console.log('[WebSocket] MSG:', data.type, data);
+        }
+
         if (data.type === 'status_update') {
           setLiveStatuses(prev => ({
             ...prev,
             [data.user_id]: data.status
           }));
         } else if (data.type === 'policy_update') {
-          console.log('Policy update received via WebSocket');
-          fetchInitialStatuses(currentUser.role);
-          toast.success('Attendance Policy updated in real-time');
+          console.log('Policy update received');
+          toast.success('Attendance Policy updated');
         } else if (data.type === 'notification' && data.recipient_id === currentUser.id) {
-          console.log('New notification received via WebSocket');
-          
           setNotifications((prev) => {
-            // De-duplicate
             if (prev.some(n => n.id === data.notification_id)) return prev;
-
             const newNotif = {
               id: data.notification_id,
               title: data.title,
@@ -76,8 +84,7 @@ export const AuthProvider = ({ children }) => {
               is_read: false,
               created_at: new Date().toISOString()
             };
-
-            // Enhanced toast for policy updates and general alerts
+            
             toast.custom((t) => (
               <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-slate-800 shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5 border border-slate-700`}>
                 <div className="flex-1 w-0 p-4">
@@ -109,9 +116,12 @@ export const AuthProvider = ({ children }) => {
           });
         }
       };
+
       ws.onclose = () => {
         wsRef.current = null;
+        console.log('Status WebSocket Disconnected');
       };
+      
       wsRef.current = ws;
     } catch (err) {
       console.error('Failed to connect to status websocket', err);
@@ -221,14 +231,53 @@ export const AuthProvider = ({ children }) => {
   }, [fetchInitialStatuses, connectWebSocket]);
 
   const refreshActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
     setLastActivity(Date.now());
     if (showWarning) setShowWarning(false);
   }, [showWarning]);
 
+  // HANDLE GLOBAL STATUS TOGGLING (SILENT)
+  const handleIdleDetection = useCallback(async (action) => {
+    // Only proceed if not already in target state
+    if (action === 'start' && status !== 'working') return;
+    if (action === 'stop' && status !== 'idle') return;
+
+    try {
+      const thresholdSeconds = getIdleThreshold();
+      const nextStatus = action === 'start' ? 'idle' : 'working';
+      setStatus(nextStatus);
+      window.dispatchEvent(new CustomEvent('statusChange', { detail: nextStatus }));
+
+      const payload = { action };
+      if (action === 'start') {
+          // Retroactively set start to (now - threshold)
+          const start = new Date(Date.now() - (thresholdSeconds * 1000));
+          payload.start_time = start.toISOString();
+      }
+
+      await api.post('/sessions/idle/', payload);
+    } catch (err) {
+      console.error('[GlobalTracking] Idle toggle failed', err);
+    }
+  }, [status]);
+
   useEffect(() => {
     checkUserStatus();
-    return () => disconnectWebSocket();
-  }, [checkUserStatus, disconnectWebSocket]);
+
+    // GLOBAL ACTIVITY LISTENERS
+    window.addEventListener('mousemove', refreshActivity);
+    window.addEventListener('keydown', refreshActivity);
+    window.addEventListener('mousedown', refreshActivity);
+    window.addEventListener('scroll', refreshActivity);
+
+    return () => {
+        disconnectWebSocket();
+        window.removeEventListener('mousemove', refreshActivity);
+        window.removeEventListener('keydown', refreshActivity);
+        window.removeEventListener('mousedown', refreshActivity);
+        window.removeEventListener('scroll', refreshActivity);
+    };
+  }, [checkUserStatus, disconnectWebSocket, refreshActivity]);
 
   // Periodic check for inactivity timeout based on policy
   useEffect(() => {
@@ -260,9 +309,51 @@ export const AuthProvider = ({ children }) => {
       }
     };
 
-    const interval = setInterval(checkTimeout, 5000); // Check every 5s for smooth countdown
+    const interval = setInterval(checkTimeout, 5000); 
     return () => clearInterval(interval);
   }, [user, policy, logout, status, lastActivity, showWarning]);
+
+  // GLOBAL AUTO-IDLE DETECTOR (FOR EMPLOYEES)
+  useEffect(() => {
+    if (!user || user.role !== 'employee' || status === 'offline' || status === 'on_break') return;
+
+    const watchIdle = () => {
+        const thresholdSeconds = getIdleThreshold();
+        const inactiveMs = Date.now() - lastActivityRef.current;
+        if (status === 'working' && inactiveMs > thresholdSeconds * 1000) {
+            handleIdleDetection('start');
+        } else if (status === 'idle' && inactiveMs < 500) { // Resume instantly on activity
+            handleIdleDetection('stop');
+        }
+    };
+
+    const interval = setInterval(watchIdle, 1000);
+    return () => clearInterval(interval);
+  }, [user, status, handleIdleDetection]);
+
+  // Global Shift Window Watcher
+  useEffect(() => {
+    if (!policy?.shift_start_time || !policy?.shift_end_time) {
+        setIsWithinShift(true);
+        return;
+    }
+
+    const checkShift = () => {
+        const now = new Date();
+        const [sH, sM] = policy.shift_start_time.split(':').map(Number);
+        const [eH, eM] = policy.shift_end_time.split(':').map(Number);
+        const start = new Date(now).setHours(sH, sM, 0, 0);
+        const end = new Date(now).setHours(eH, eM, 0, 0);
+        const within = now >= start && now <= end;
+        if (within !== isWithinShift) {
+            setIsWithinShift(within);
+        }
+    };
+
+    checkShift();
+    const interval = setInterval(checkShift, 30000); // Check every 30s
+    return () => clearInterval(interval);
+  }, [policy, isWithinShift]);
 
   const value = {
     user,
@@ -278,6 +369,12 @@ export const AuthProvider = ({ children }) => {
     logout,
     notifications,
     setNotifications,
+    isWithinShift,
+    sendJson: (data) => {
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(data));
+      }
+    },
     markAsRead: async (id) => {
       try {
         await api.post(`/notifications/${id}/mark_read/`);

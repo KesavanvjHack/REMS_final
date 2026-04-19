@@ -169,8 +169,10 @@ const HolidayManagement = () => {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 items-end">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Category</label>
+            <label htmlFor="exportCategory" className="block text-sm font-medium text-slate-300 mb-2">Category</label>
             <select
+              id="exportCategory"
+              name="export-category"
               className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none"
               value={exportCategory}
               onChange={(e) => setExportCategory(e.target.value)}
@@ -184,8 +186,10 @@ const HolidayManagement = () => {
 
           {exportCategory === 'particular_employee' && (
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Select User</label>
+              <label htmlFor="exportUserId" className="block text-sm font-medium text-slate-300 mb-2">Select User</label>
               <select
+                id="exportUserId"
+                name="export-user-id"
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none"
                 value={exportUserId}
                 onChange={(e) => setExportUserId(e.target.value)}
@@ -199,8 +203,10 @@ const HolidayManagement = () => {
           )}
 
           <div className={exportCategory === 'particular_employee' ? '' : 'lg:col-span-1'}>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Time Range</label>
+            <label htmlFor="exportTimeRange" className="block text-sm font-medium text-slate-300 mb-2">Time Range</label>
             <select
+              id="exportTimeRange"
+              name="export-time-range"
               className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none"
               value={exportTimeRange}
               onChange={(e) => setExportTimeRange(e.target.value)}
@@ -214,18 +220,22 @@ const HolidayManagement = () => {
           {exportTimeRange === 'custom' && (
             <>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">From Date</label>
+                <label htmlFor="exportFromDate" className="block text-sm font-medium text-slate-300 mb-2">From Date</label>
                 <input
                   type="date"
+                  id="exportFromDate"
+                  name="export-from-date"
                   className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
                   value={exportFromDate}
                   onChange={(e) => setExportFromDate(e.target.value)}
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">To Date</label>
+                <label htmlFor="exportToDate" className="block text-sm font-medium text-slate-300 mb-2">To Date</label>
                 <input
                   type="date"
+                  id="exportToDate"
+                  name="export-to-date"
                   className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
                   value={exportToDate}
                   onChange={(e) => setExportToDate(e.target.value)}
@@ -235,8 +245,10 @@ const HolidayManagement = () => {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Format</label>
+            <label htmlFor="exportFormat" className="block text-sm font-medium text-slate-300 mb-2">Format</label>
             <select
+              id="exportFormat"
+              name="export-format"
               className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none"
               value={exportFormat}
               onChange={(e) => setExportFormat(e.target.value)}
@@ -250,10 +262,10 @@ const HolidayManagement = () => {
             <button
               onClick={handleExport}
               disabled={isExporting}
-              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 text-white py-2.5 rounded-lg font-medium shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-2"
+              className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white py-2.5 rounded-lg font-medium shadow-[0_0_15px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-2 whitespace-nowrap"
             >
               <ArrowDownTrayIcon className="h-5 w-5" />
-              {isExporting ? 'Exporting...' : 'Export Leaves'}
+              <span>{isExporting ? 'Exporting...' : 'Export Leaves'}</span>
             </button>
           </div>
         </div>
@@ -348,9 +360,11 @@ const HolidayManagement = () => {
           <h2 className="text-lg font-semibold text-white mb-6">Add New Holiday</h2>
           <form onSubmit={handleAddHoliday} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Holiday Name</label>
+              <label htmlFor="holidayName" className="block text-sm font-medium text-slate-300 mb-2">Holiday Name</label>
               <input
                 type="text"
+                id="holidayName"
+                name="holiday-name"
                 required
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none"
                 value={newHoliday.name}
@@ -358,9 +372,11 @@ const HolidayManagement = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Date</label>
+              <label htmlFor="holidayDate" className="block text-sm font-medium text-slate-300 mb-2">Date</label>
               <input
                 type="date"
+                id="holidayDate"
+                name="holiday-date"
                 required
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500/50 outline-none [&::-webkit-calendar-picker-indicator]:filter [&::-webkit-calendar-picker-indicator]:invert"
                 value={newHoliday.date}

@@ -47,9 +47,9 @@ const StatusBadge = ({ status }) => {
   const { color, bg, border, icon: Icon, label } = config[status] || config.offline;
 
   return (
-    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border ${bg} ${border} ${color}`}>
-      <Icon className="h-4 w-4" />
-      <span className="text-sm font-medium tracking-wide">{label}</span>
+    <div className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-full border ${bg} ${border} ${color}`}>
+      <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+      <span className="text-[10px] sm:text-sm font-medium tracking-wide">{label}</span>
     </div>
   );
 };

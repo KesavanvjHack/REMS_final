@@ -15,9 +15,15 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-rems-secret-key-change-in-
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['*']
+# ─── Security ──────────────────────────────────────────────────────────────────
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost 127.0.0.1 [::1] *').split()
 
 INSTALLED_APPS = [
+    'unfold',
+    'unfold.contrib.filters',
+    'unfold.contrib.forms',
+    'unfold.contrib.import_export',
+    'import_export',
     'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
@@ -126,6 +132,14 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '30/minute',
+        'user': '120/minute'
+    }
 }
 
 # ─── SimpleJWT ─────────────────────────────────────────────────────────────────
@@ -139,6 +153,135 @@ SIMPLE_JWT = {
     'SIGNING_KEY': SECRET_KEY,
     'AUTH_HEADER_TYPES': ('Bearer',),
     'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+    'JTI_CLAIM': 'jti',
+    'TOKEN_TYPE_CLAIM': 'token_type',
+}
+
+# ─── Unfold Admin Theme ───────────────────────────────────────────────────────
+UNFOLD = {
+    "SITE_TITLE": "REMS Admin Portal",
+    "SITE_HEADER": "REMS",
+    "SITE_SYMBOL": "speed", # material symbol
+    "SHOW_HISTORY": True,
+    "SHOW_VIEW_ON_SITE": True,
+    "THEME": "dark",
+    "COLORS": {
+        "primary": {
+            "50": "238 242 255",
+            "100": "224 231 255",
+            "200": "199 210 254",
+            "300": "165 180 252",
+            "400": "129 140 248",
+            "500": "99 102 241", # Indigo-500
+            "600": "79 70 229",
+            "700": "67 56 202",
+            "800": "55 48 163",
+            "900": "49 46 129",
+            "950": "30 27 75",
+        },
+    },
+    "DASHBOARD_CALLBACK": "core.dashboard.dashboard_callback",
+    "SIDEBAR": {
+        "show_search": True,
+        "show_all_applications": False,
+        "navigation": [
+            {
+                "title": "Workforce Management",
+                "items": [
+                    {
+                        "title": "Employees",
+                        "link": "/admin/core/user/",
+                        "icon": "person", 
+                    },
+                    {
+                        "title": "Attendance Hub",
+                        "link": "/admin/core/attendance/",
+                        "icon": "calendar_month",
+                    },
+                    {
+                        "title": "Leave Center",
+                        "link": "/admin/core/leaverequest/",
+                        "icon": "event_busy",
+                    },
+                    {
+                        "title": "Departments",
+                        "link": "/admin/core/department/",
+                        "icon": "groups",
+                    },
+                ],
+            },
+            {
+                "title": "Operational Control",
+                "items": [
+                    {
+                        "title": "Active Projects",
+                        "link": "/admin/core/project/",
+                        "icon": "corporate_fare",
+                    },
+                    {
+                        "title": "Tasks & Productivity",
+                        "link": "/admin/core/task/",
+                        "icon": "assignment",
+                    },
+                    {
+                        "title": "Shift Schedules",
+                        "link": "/admin/core/shift/",
+                        "icon": "schedule",
+                    },
+                    {
+                        "title": "Policies",
+                        "link": "/admin/core/attendancepolicy/",
+                        "icon": "policy",
+                    },
+                ],
+            },
+            {
+                "title": "Activity Monitoring",
+                "items": [
+                    {
+                        "title": "Screen Captures",
+                        "link": "/admin/core/screencapture/",
+                        "icon": "screenshot",
+                    },
+                    {
+                        "title": "Break Sessions",
+                        "link": "/admin/core/breaksession/",
+                        "icon": "coffee",
+                    },
+                    {
+                        "title": "Idle Time Logs",
+                        "link": "/admin/core/idlelog/",
+                        "icon": "timer_off",
+                    },
+                    {
+                        "title": "App & Web Usage",
+                        "link": "/admin/core/appusagelog/",
+                        "icon": "monitoring",
+                    },
+                ],
+            },
+            {
+                "title": "Security & System",
+                "items": [
+                    {
+                        "title": "Security Audit Logs",
+                        "link": "/admin/core/auditlog/",
+                        "icon": "security",
+                    },
+                    {
+                        "title": "IP Whitelist",
+                        "link": "/admin/core/ipwhitelist/",
+                        "icon": "vpn_lock",
+                    },
+                    {
+                        "title": "System Notifications",
+                        "link": "/admin/core/notification/",
+                        "icon": "notifications",
+                    },
+                ],
+            },
+        ],
+    },
 }
 
 # ─── Django Channels ───────────────────────────────────────────────────────────
@@ -150,3 +293,29 @@ CHANNEL_LAYERS = {
 
 # ─── Email ─────────────────────────────────────────────────────────────────────
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# ─── Production Security Hardening ──────────────────────────────────────────────
+# These settings ensure maximum protection in production (HTTPS)
+# while remaining compatible with local development (HTTP).
+
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_BROWSER_XSS_FILTER = True
+
+if not DEBUG:
+    # Production-only Security (requires HTTPS)
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000 # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    # Additional session safety
+    SESSION_COOKIE_AGE = 3600 * 24 # 24 hours
+    SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+

@@ -1,10 +1,11 @@
 import { useContext, useEffect, useState, useRef, useMemo } from 'react';
 import { AuthContext } from '../context/AuthContext';
-import { ArrowRightOnRectangleIcon, BellIcon, UsersIcon } from '@heroicons/react/24/outline';
+import { ArrowRightOnRectangleIcon, BellIcon, UsersIcon, Bars3Icon } from '@heroicons/react/24/outline';
 import api from '../api/axios';
 import StatusBadge from './StatusBadge';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { format, isToday, isYesterday } from 'date-fns';
 
 /**
  * LiveStatusPanel — clickable dropdown showing all team members' live status.
@@ -99,7 +100,7 @@ const LiveStatusPanel = ({ liveStatuses, user }) => {
       {/* Pill button */}
       <button
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-2 px-3 py-1.5 border rounded-xl text-xs font-semibold transition-all
+        className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 border rounded-xl text-[10px] sm:text-xs font-semibold transition-all
           ${open
             ? 'bg-indigo-500/20 border-indigo-500/40 text-indigo-300'
             : 'bg-slate-800/80 border-slate-700/50 text-slate-300 hover:border-slate-600'
@@ -109,27 +110,27 @@ const LiveStatusPanel = ({ liveStatuses, user }) => {
         {counts.working > 0 && (
           <span className="flex items-center gap-1 text-emerald-400">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            {counts.working} working
+            {counts.working} <span className="hidden sm:inline">working</span>
           </span>
         )}
         {counts.on_break > 0 && (
           <span className="flex items-center gap-1 text-cyan-400">
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-            {counts.on_break} break
+            {counts.on_break} <span className="hidden sm:inline">break</span>
           </span>
         )}
         {counts.idle > 0 && (
           <span className="flex items-center gap-1 text-amber-400">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-            {counts.idle} idle
+            {counts.idle} <span className="hidden sm:inline">idle</span>
           </span>
         )}
         <span className="text-slate-500 ml-0.5">{open ? '▲' : '▼'}</span>
       </button>
 
-      {/* Dropdown panel */}
+      {/* Dropdown panel - Fixed positioning on mobile to prevent overflow, absolute on desktop */}
       {open && (
-        <div className="absolute right-0 mt-3 w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-50 overflow-hidden origin-top-right">
+        <div className="fixed sm:absolute top-20 sm:top-auto inset-x-4 sm:inset-x-auto sm:right-0 mt-3 sm:w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl z-50 overflow-hidden origin-top sm:origin-top-right animate-in fade-in zoom-in duration-200">
           <div className="flex items-center justify-between px-4 py-3 bg-slate-800/60 border-b border-slate-700/50">
             <p className="text-sm font-semibold text-slate-200">Live Team Status</p>
             <button onClick={fetchMembers} className="text-slate-500 hover:text-indigo-400 transition-colors text-xs">↻ Refresh</button>
@@ -231,7 +232,7 @@ const LiveStatusPanel = ({ liveStatuses, user }) => {
   );
 };
 
-const TopBar = () => {
+const TopBar = ({ onMenuClick }) => {
   const { 
     user, 
     logout, 
@@ -245,6 +246,15 @@ const TopBar = () => {
   
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  const formatNotifDate = (dateStr) => {
+    const date = new Date(dateStr);
+    const time = format(date, 'hh:mm a');
+    const dayDate = format(date, 'dd MMM yyyy');
+    if (isToday(date)) return `Today, ${dayDate}, ${time}`;
+    if (isYesterday(date)) return `Yesterday, ${dayDate}, ${time}`;
+    return format(date, 'dd MMM yyyy, hh:mm a');
+  };
 
   useEffect(() => {
     fetchStatus();
@@ -300,17 +310,25 @@ const TopBar = () => {
   };
 
   return (
-    <div className="h-20 border-b border-slate-800 bg-slate-900/95 backdrop-blur-md sticky top-0 z-40 px-8 flex items-center justify-between">
-      <div className="flex items-center gap-4 text-slate-400">
-        <h2 className="text-xl font-semibold tracking-wide capitalize text-slate-200">
+    <div className="h-20 border-b border-slate-800 bg-slate-900/95 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-8 flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        <button 
+          onClick={onMenuClick}
+          className="lg:hidden p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors"
+        >
+          <Bars3Icon className="h-6 w-6" />
+        </button>
+        <h2 className="text-base sm:text-xl font-bold tracking-tight capitalize text-slate-100 truncate max-w-[100px] xs:max-w-[150px] sm:max-w-none">
           {window.location.pathname.split('/')[1] || 'Dashboard'}
         </h2>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-1.5 sm:gap-4">
         {/* Persistent live team status — only visible to admin or manager */}
         {user && (user.role === 'admin' || user.role === 'manager') && (
-          <LiveStatusPanel liveStatuses={liveStatuses} user={user} />
+          <div className="block">
+            <LiveStatusPanel liveStatuses={liveStatuses} user={user} />
+          </div>
         )}
 
         <StatusBadge status={currentStatus} />
@@ -331,10 +349,8 @@ const TopBar = () => {
                 </>
               )}
             </button>
-
-            {/* Notifications Dropdown */}
             {showNotifications && (
-              <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-slate-800 border border-slate-700 shadow-2xl rounded-xl overflow-hidden z-50 transform origin-top-right transition-all">
+              <div className="fixed sm:absolute top-20 sm:top-auto inset-x-4 sm:inset-x-auto sm:right-0 mt-3 sm:w-96 bg-slate-800 border border-slate-700 shadow-2xl rounded-xl overflow-hidden z-50 transform origin-top sm:origin-top-right transition-all animate-in fade-in zoom-in duration-200">
                 <div className="flex items-center justify-between px-4 py-3 bg-slate-800/80 border-b border-slate-700/50">
                   <h3 className="text-sm font-semibold text-slate-200">Notifications</h3>
                   {notifications.length > 0 && (
@@ -364,7 +380,7 @@ const TopBar = () => {
                             <div className="flex justify-between items-start gap-2 mb-1">
                               <p className="text-sm font-medium text-slate-200 truncate">{notif.title}</p>
                               <p className="text-[10px] text-slate-500 whitespace-nowrap">
-                                {new Date(notif.created_at).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
+                                {formatNotifDate(notif.created_at)}
                               </p>
                             </div>
                             <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">{notif.message}</p>
@@ -391,32 +407,32 @@ const TopBar = () => {
           </div>
         )}
 
-        <div className="flex items-center gap-4 pl-6 border-l border-slate-700 h-10">
+        <div className="flex items-center gap-2 sm:gap-4 pl-3 sm:pl-6 border-l border-slate-700 h-10">
           {user ? (
             <>
-              <div className="text-right">
+              <div className="hidden md:block text-right">
                 <p className="text-base font-semibold text-slate-200 tracking-wide">{user?.full_name}</p>
                 <p className="text-sm text-rose-500 font-bold uppercase tracking-widest font-mono">
                   {currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                 </p>
               </div>
-              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 font-bold shadow-inner">
+              <div className="h-8 w-8 sm:h-10 sm:w-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-cyan-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 font-bold shadow-inner">
                 {user?.full_name?.charAt(0) || 'U'}
               </div>
               <button
                 onClick={handleLogout}
-                className="ml-4 p-2 text-rose-400/80 hover:text-rose-400 hover:bg-rose-400/10 rounded-lg transition-all"
+                className="ml-1 sm:ml-4 p-2 text-rose-400/80 hover:text-rose-400 hover:bg-rose-400/10 rounded-lg transition-all"
                 title="Logout"
               >
                 <ArrowRightOnRectangleIcon className="h-6 w-6" />
               </button>
             </>
           ) : (
-             <div className="flex gap-4 items-center">
-                <Link to="/login" className="px-5 py-2 text-sm font-semibold text-indigo-400 border border-indigo-500/30 rounded-lg shadow-[0_0_15px_-3px_rgba(99,102,241,0.2)] hover:bg-indigo-500/10 transition-all">
+             <div className="flex gap-2 sm:gap-4 items-center">
+                <Link to="/login" className="px-3 sm:px-5 py-2 text-xs sm:text-sm font-semibold text-indigo-400 border border-indigo-500/30 rounded-lg shadow-[0_0_15px_-3px_rgba(99,102,241,0.2)] hover:bg-indigo-500/10 transition-all">
                   Sign In
                 </Link>
-                <Link to="/signup" className="px-5 py-2 text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-[0_0_20px_-3px_rgba(99,102,241,0.6)] hover:bg-indigo-500 hover:scale-105 transition-all">
+                <Link to="/signup" className="px-3 sm:px-5 py-2 text-xs sm:text-sm font-semibold text-white bg-indigo-600 rounded-lg shadow-[0_0_20px_-3px_rgba(99,102,241,0.6)] hover:bg-indigo-500 hover:scale-105 transition-all">
                   Sign Up
                 </Link>
              </div>

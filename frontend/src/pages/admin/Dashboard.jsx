@@ -41,11 +41,11 @@ const AdminDashboard = () => {
     return (
       <div className="space-y-6 page-fade-in">
         <h1 className="text-2xl font-bold tracking-tight text-white mb-6">Organization Overview</h1>
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
           {[...Array(5)].map((_, i) => (
             <div key={i} className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl flex items-center gap-4">
-              <div className="p-4 rounded-xl bg-slate-700 w-16 h-16 skeleton-pulse"></div>
-              <div className="space-y-2">
+              <div className="p-4 rounded-xl bg-slate-700 w-16 h-16 skeleton-pulse shrink-0"></div>
+              <div className="space-y-2 flex-1 min-w-0">
                 <div className="h-4 w-24 bg-slate-700 rounded skeleton-pulse"></div>
                 <div className="h-8 w-16 bg-slate-700 rounded skeleton-pulse"></div>
               </div>
@@ -84,7 +84,7 @@ const AdminDashboard = () => {
     <div className="space-y-6 page-fade-in">
       <h1 className="text-2xl font-bold tracking-tight text-white mb-6">Organization Overview</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
         <StatCard 
           title="Total Attendance Recorded" 
           value={summary?.total || 0} 
@@ -120,9 +120,9 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
         <div className="lg:col-span-2 bg-slate-800/50 border border-slate-700 p-6 rounded-2xl">
           <h2 className="text-lg font-semibold text-white mb-6">7-Day Productivity Trend</h2>
-          <div className="h-80 w-full">
-            <ResponsiveContainer>
-              <BarChart data={dailyData}>
+          <div className="h-[320px] w-full min-w-0" style={{ position: 'relative' }}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300}>
+              <BarChart data={dailyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                 <XAxis dataKey="date" stroke="#94a3b8" />
                 <YAxis stroke="#94a3b8" />
@@ -141,8 +141,8 @@ const AdminDashboard = () => {
 
         <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-2xl">
           <h2 className="text-lg font-semibold text-white mb-6">Attendance Distribution</h2>
-          <div className="h-80 w-full">
-            <ResponsiveContainer>
+          <div className="h-[320px] w-full min-w-0" style={{ position: 'relative' }}>
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={300}>
               <PieChart>
                 <Pie
                   data={pieData}

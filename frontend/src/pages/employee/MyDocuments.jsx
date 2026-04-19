@@ -81,20 +81,20 @@ const MyDocuments = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
             <FolderIcon className="h-6 w-6 text-indigo-400" />
             My Documents
           </h2>
-          <p className="text-slate-400 mt-1">Access policies, payslips, and upload HR documents.</p>
+          <p className="text-slate-400 mt-1 text-sm">Access policies, payslips, and upload HR documents.</p>
         </div>
         <button 
           onClick={openModal}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-colors"
+          className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-all whitespace-nowrap w-full sm:w-auto font-medium shadow-lg shadow-indigo-500/20"
         >
           <DocumentArrowUpIcon className="h-5 w-5" />
-          Upload Document
+          <span>Upload Document</span>
         </button>
       </div>
 
@@ -140,9 +140,10 @@ const MyDocuments = () => {
             
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Document Title *</label>
+                <label htmlFor="docTitle" className="block text-sm font-medium text-slate-300 mb-1">Document Title *</label>
                 <input 
                   type="text" 
+                  id="docTitle"
                   name="title" 
                   required
                   value={formData.title} 
@@ -153,9 +154,11 @@ const MyDocuments = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Select File *</label>
+                <label htmlFor="docFile" className="block text-sm font-medium text-slate-300 mb-1">Select File *</label>
                 <input 
                   type="file" 
+                  id="docFile"
+                  name="file"
                   required
                   accept=".pdf,.doc,.docx,.jpg,.png"
                   onChange={handleFileChange}

@@ -22,24 +22,13 @@ const ATTENDANCE_COLORS = {
   holiday:  'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20',
 };
 
-/**
- * TeamAttendance (Manager Dashboard component)
- *
- * API call: GET /api/sessions/team-timesheet/
- *
- * The backend (TeamTimesheetView) filters Attendance records by
- *   user__manager = request.user
- * so managers only ever see their own direct reports.
- * Each record is enriched with `live_status` from StatusService.get_user_status().
- *
- * Real-time feel: the component polls every 30 seconds with setInterval
- * so managers see status changes without a page refresh.
- */
 const TeamAttendance = () => {
   const [attendance, setAttendance] = useState([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const { policy } = useContext(AuthContext);
+  const [liveSharers, setLiveSharers] = useState({}); // { employeeId: true/false }
+  const [viewingEmployee, setViewingEmployee] = useState(null); // { id, name }
 
   // Date filter state for export
   const [startDate, setStartDate] = useState('');
@@ -50,7 +39,6 @@ const TeamAttendance = () => {
   const fetchTeamAttendance = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      // ← This is the key call: uses employee__manager = request.user filter
       const res = await api.get('/sessions/team-timesheet/');
       setAttendance(res.data.results || res.data);
       setLastUpdated(new Date());
@@ -61,12 +49,19 @@ const TeamAttendance = () => {
     }
   }, []);
 
+  const handleCloseViewer = useCallback(() => {
+    setViewingEmployee(null);
+  }, []);
+
   useEffect(() => {
     fetchTeamAttendance();
 
-    // Auto-refresh every 1 minute as requested
+    // Auto-refresh every 1 minute
     const interval = setInterval(() => fetchTeamAttendance(true), 60000);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearInterval(interval);
+    };
   }, [fetchTeamAttendance]);
 
   const handleQuickSelect = (type) => {
@@ -87,7 +82,6 @@ const TeamAttendance = () => {
   const handleExport = () => {
     let rawData = attendance;
     
-    // If the user picked dates, filter the exported data
     if (startDate && endDate) {
       const start = new Date(startDate);
       start.setHours(0, 0, 0, 0);
@@ -109,7 +103,7 @@ const TeamAttendance = () => {
       return;
     }
 
-    const headers = ['Date', 'Employee Name', 'Email', 'Login Time', 'Last Logout', 'Attendance Status', 'Work Hours', 'Break (Hours)', 'Idle (Hours)', 'Anomalies', 'Remarks / Reason'];
+    const headers = ['Date', 'Employee Name', 'Email', 'Login Time', 'Last Logout', 'Attendance Status', 'Work Hours', 'Break (Hours)', 'Idle (Hours)', 'Gap/Late (Hours)', 'Anomalies', 'Remarks / Reason'];
     const csvData = rawData.map(rec => [
          format(new Date(rec.date), 'yyyy-MM-dd'),
          rec.user_name,
@@ -120,6 +114,7 @@ const TeamAttendance = () => {
          formatDecimalHours(rec.total_work_seconds),
          formatDecimalHours(rec.total_break_seconds),
          formatDecimalHours(rec.total_idle_seconds),
+         formatDecimalHours(rec.missing_seconds),
          rec.is_flagged ? `Yes - ${rec.flag_reason}` : 'No',
          rec.manager_remark || rec.flag_reason || '-'
     ]);
@@ -150,12 +145,10 @@ const TeamAttendance = () => {
     </div>
   );
 
-  // Extract unique employees from attendance data
   const uniqueEmployees = Array.from(new Set(attendance.map(a => a.user_name))).filter(Boolean).sort();
   
   return (
     <div className="space-y-6 page-fade-in">
-      {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between xl:items-start gap-4 mb-6">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-indigo-500/20 rounded-lg">
@@ -178,7 +171,6 @@ const TeamAttendance = () => {
           <button 
             onClick={() => fetchTeamAttendance()}
             className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg border border-slate-700 transition-all flex items-center gap-2"
-            title="Manual Refresh"
           >
             <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             <span className="text-xs font-medium hidden sm:inline">Refresh</span>
@@ -186,11 +178,13 @@ const TeamAttendance = () => {
         </div>
       </div>
 
-      {/* Export Controls Section */}
       <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4">
         <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
           <div className="flex gap-2 flex-wrap">
+            <label htmlFor="exportEmployee" className="sr-only">Filter by Employee</label>
             <select
+              id="exportEmployee"
+              name="export-employee"
               value={exportEmployee}
               onChange={(e) => setExportEmployee(e.target.value)}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -201,7 +195,10 @@ const TeamAttendance = () => {
               ))}
             </select>
 
+            <label htmlFor="exportType" className="sr-only">Select Export Time Range</label>
             <select 
+              id="exportType"
+              name="export-type"
               value={exportType}
               onChange={(e) => handleQuickSelect(e.target.value)}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
@@ -213,15 +210,21 @@ const TeamAttendance = () => {
           </div>
           
           <div className="flex items-center gap-2">
+            <label htmlFor="exportStartDate" className="sr-only">Export Start Date</label>
             <input 
               type="date" 
+              id="exportStartDate"
+              name="export-start-date"
               value={startDate}
               onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
             />
             <span className="text-slate-500 text-xs">to</span>
+            <label htmlFor="exportEndDate" className="sr-only">Export End Date</label>
             <input 
               type="date" 
+              id="exportEndDate"
+              name="export-end-date"
               value={endDate}
               onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
               className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
@@ -238,141 +241,81 @@ const TeamAttendance = () => {
         </div>
       </div>
 
-      {/* Table Section */}
       <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
               <tr>
-                <th className="px-3 py-4 font-semibold tracking-wider text-xs">Date</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-xs whitespace-nowrap">Date</th>
                 <th className="px-3 py-4 font-semibold tracking-wider text-xs text-left">Team Member</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-center text-xs">Login Time</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-center hidden lg:table-cell text-xs">Last Logout</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center text-[10px] text-slate-400">Shift (Actual)</th>
                 <th className="px-3 py-4 font-semibold tracking-wider text-center text-xs">Attendance</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Work (h)</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Break (h)</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Idle (h)</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-center text-xs">Anomalies</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-xs text-left">Remarks / Reason</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Work</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Break</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Idle</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs text-slate-400">Gap</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center text-xs">Alerts</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-xs text-left text-slate-500 font-medium">Remarks</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700/50">
-              {loading ? (
-                [...Array(5)].map((_, i) => (
-                  <tr key={i}>
-                    {[...Array(10)].map((_, j) => (
-                      <td key={j} className="px-3 py-4">
-                        <div className="h-4 w-full skeleton-pulse bg-slate-700/50 rounded"></div>
+            <tbody className="divide-y divide-slate-700/50 text-xs">
+              {attendance
+                .filter(record => new Date(record.date) <= new Date())
+                .map((record) => {
+                  const todayStr = new Date().toISOString().split('T')[0];
+                  return (
+                    <tr key={record.id} className="hover:bg-slate-700/20 transition-colors">
+                      <td className="px-3 py-4 font-medium text-slate-200 text-xs whitespace-nowrap">
+                        {format(new Date(record.date), 'MMM dd, yyyy')}
                       </td>
-                    ))}
-                  </tr>
-                ))
-              ) : (
-                attendance
-                  .filter(record => new Date(record.date) <= new Date())
-                  .map((record) => {
-                    const todayStr = new Date().toISOString().split('T')[0];
-                    const now = new Date();
-                    const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-                    const istDate = new Date(istString);
-                    const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
-                    const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
-                    const shiftEndMinutes = endHour * 60 + endMin;
-                    const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
-
-                    const isCalculating = record.date === todayStr && 
-                                        isBeforeShiftEnd &&
-                                        record.status !== 'present' && 
-                                        record.status !== 'on_leave' && 
-                                        record.status !== 'holiday';
-                    const displayStatus = isCalculating ? 'calculating...' : record.status;
-                    
-                    return (
-                      <tr key={record.id} className="hover:bg-slate-700/20 transition-colors">
-                        <td className="px-3 py-4 font-medium text-slate-200 text-xs whitespace-nowrap">
-                          {format(new Date(record.date), 'MMM dd, yyyy')}
-                        </td>
-                        <td className="px-3 py-4">
-                          <div>
-                            <p className="font-semibold text-slate-200 text-xs">{record.user_name}</p>
-                            <p className="text-[10px] text-slate-500 truncate max-w-[100px]" title={record.user_email}>{record.user_email}</p>
-                          </div>
-                        </td>
-                        <td className="px-3 py-4 text-center">
-                          <span className="text-slate-300 font-mono text-[10px] whitespace-nowrap">
-                            {formatLastLogout(record.first_login)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-4 text-center hidden lg:table-cell">
-                          <span className="text-slate-300 font-mono text-[10px] whitespace-nowrap">
-                            {formatLastLogout(record.last_logout)}
-                          </span>
-                        </td>
-                        <td className="px-3 py-4 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest ${isCalculating ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : (ATTENDANCE_COLORS[record.status] || 'bg-slate-500/10 text-slate-400')}`}>
-                            {displayStatus?.replace('_', ' ')}
-                          </span>
-                        </td>
-                        <td className="px-3 py-4 text-right text-emerald-400 font-mono text-[11px] whitespace-nowrap">
-                          <LiveDuration
-                            initialSeconds={record.total_work_seconds}
-                            status={record.live_status}
-                            type="work"
-                            isToday={record.date === todayStr}
-                          />
-                        </td>
-                        <td className="px-3 py-4 text-right text-cyan-400 font-mono text-[11px] whitespace-nowrap">
-                          <LiveDuration
-                            initialSeconds={record.total_break_seconds}
-                            status={record.live_status}
-                            type="break"
-                            isToday={record.date === todayStr}
-                          />
-                        </td>
-                        <td className="px-3 py-4 text-right text-amber-400 font-mono text-[11px] whitespace-nowrap">
-                          <LiveDuration
-                            initialSeconds={record.total_idle_seconds}
-                            status={record.live_status}
-                            type="idle"
-                            isToday={record.date === todayStr}
-                          />
-                        </td>
-                        <td className="px-3 py-4 text-center">
-                          {record.is_flagged ? (
-                            <span className="text-rose-400 font-bold text-[10px] bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>
-                              Flagged
-                            </span>
-                          ) : (
-                            <span className="text-slate-600">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-4">
-                          {record.manager_remark ? (
-                            <div className="flex flex-col">
-                              <span className="text-indigo-400 text-[10px] font-medium italic underline underline-offset-4 decoration-indigo-500/30 uppercase tracking-wider">Note:</span>
-                              <p className="text-slate-300 text-[10px] mt-1 leading-relaxed truncate max-w-[150px]" title={record.manager_remark}>{record.manager_remark}</p>
-                            </div>
-                          ) : record.flag_reason ? (
-                            <p className="text-slate-400 text-[10px] italic leading-relaxed truncate max-w-[150px]" title={record.flag_reason}>{record.flag_reason}</p>
-                          ) : (
-                            <span className="text-slate-600 font-mono text-[10px]">-</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-              )}
-              {!loading && attendance.length === 0 && (
-                <tr>
-                  <td colSpan="10" className="px-6 py-10 text-center text-slate-500 italic font-medium">
-                    No timesheet records found for your team.
-                  </td>
-                </tr>
-              )}
+                      <td className="px-3 py-4">
+                        <div>
+                          <p className="font-semibold text-slate-200 text-xs truncate max-w-[120px]">{record.user_name}</p>
+                          <p className="text-[10px] text-slate-500 truncate max-w-[100px]">{record.user_email}</p>
+                        </div>
+                      </td>
+                      <td className="px-3 py-4 text-center font-mono leading-tight whitespace-nowrap">
+                        <span className="block text-indigo-400 text-[10px] font-bold">
+                          {record.first_login ? format(new Date(record.first_login), 'hh:mm a') : '--:--'}
+                        </span>
+                        <span className="block text-slate-600 text-[9px] my-0.5">to</span>
+                        <span className="block text-rose-400 text-[10px] font-bold">
+                          {record.last_logout ? format(new Date(record.last_logout), 'hh:mm a') : '--:--'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-4 text-center">
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-widest ${ATTENDANCE_COLORS[record.status] || 'bg-slate-500/10 text-slate-400'}`}>
+                          {record.status?.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-3 py-4 text-right text-emerald-400 font-mono text-[10px]">
+                        <LiveDuration initialSeconds={record.total_work_seconds} status={record.live_status} type="work" isToday={record.date === todayStr} />
+                      </td>
+                      <td className="px-3 py-4 text-right text-cyan-400 font-mono text-[10px]">
+                        <LiveDuration initialSeconds={record.total_break_seconds} status={record.live_status} type="break" isToday={record.date === todayStr} />
+                      </td>
+                      <td className="px-3 py-4 text-right text-amber-400 font-mono text-[10px]">
+                        <LiveDuration initialSeconds={record.total_idle_seconds} status={record.live_status} type="idle" isToday={record.date === todayStr} />
+                      </td>
+                      <td className="px-3 py-4 text-right text-orange-400/90 font-mono text-[10px] whitespace-nowrap font-bold">
+                        {record.missing_seconds > 0 ? (
+                           <span>{Math.floor(record.missing_seconds / 3600).toString().padStart(2, '0')}:{Math.floor((record.missing_seconds % 3600) / 60).toString().padStart(2, '0')}:{(record.missing_seconds % 60).toString().padStart(2, '0')}</span>
+                        ) : '—'}
+                      </td>
+                      <td className="px-3 py-4 text-center">
+                        {record.is_flagged ? <span className="text-rose-400 font-bold text-[9px] bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter shadow-sm shadow-rose-900/20">Alert</span> : <span className="text-slate-600">—</span>}
+                      </td>
+                      <td className="px-3 py-4 text-slate-400 text-[10px] italic truncate max-w-[120px]">
+                        {record.manager_remark || record.flag_reason || '-'}
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
       </div>
+
     </div>
   );
 };

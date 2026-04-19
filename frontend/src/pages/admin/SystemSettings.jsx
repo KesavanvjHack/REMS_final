@@ -32,17 +32,17 @@ const SystemSettings = () => {
           </h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-1">Session Timeout (Minutes)</label>
-              <input type="number" defaultValue={60} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+              <label htmlFor="sessionTimeout" className="block text-sm font-medium text-slate-400 mb-1">Session Timeout (Minutes)</label>
+              <input type="number" id="sessionTimeout" name="session-timeout" defaultValue={60} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-1">Max Failed Login Attempts</label>
-              <input type="number" defaultValue={5} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+              <label htmlFor="maxLoginAttempts" className="block text-sm font-medium text-slate-400 mb-1">Max Failed Login Attempts</label>
+              <input type="number" id="maxLoginAttempts" name="max-login-attempts" defaultValue={5} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-slate-300">Strict IP Whitelisting Enforcement</span>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" className="sr-only peer" defaultChecked />
+              <label htmlFor="ipEnforcement" className="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="ipEnforcement" name="ip-enforcement" className="sr-only peer" defaultChecked />
                 <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-500"></div>
               </label>
             </div>
@@ -57,16 +57,16 @@ const SystemSettings = () => {
           </h3>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-1">Backup Storage Region</label>
-              <select className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+              <label htmlFor="backupRegion" className="block text-sm font-medium text-slate-400 mb-1">Backup Storage Region</label>
+              <select id="backupRegion" name="backup-region" className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
                 <option>us-east-1</option>
                 <option>eu-central-1</option>
                 <option>ap-south-1</option>
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-400 mb-1">Data Retention (Days)</label>
-              <input type="number" defaultValue={365} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
+              <label htmlFor="dataRetention" className="block text-sm font-medium text-slate-400 mb-1">Data Retention (Days)</label>
+              <input type="number" id="dataRetention" name="data-retention" defaultValue={365} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
             </div>
           </div>
         </div>

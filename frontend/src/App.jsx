@@ -1,4 +1,6 @@
+import { useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthContext } from './context/AuthContext';
 import { Toaster, ToastBar, toast } from 'react-hot-toast';
 import { XMarkIcon } from '@heroicons/react/24/solid';
 import { AuthProvider } from './context/AuthContext';
@@ -36,6 +38,38 @@ import MyDocuments from './pages/employee/MyDocuments';
 import ActivityLogs from './pages/employee/ActivityLogs';
 import Expenses from './pages/employee/Expenses';
 
+const RootRedirect = () => {
+  const { user, loading } = useContext(AuthContext);
+  
+  if (loading) return (
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center relative overflow-hidden">
+      <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
+      <div className="relative">
+        <div className="w-24 h-24 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+        <div className="absolute inset-0 w-24 h-24 border-4 border-transparent border-b-cyan-400 rounded-full animate-spin [animation-duration:1.5s]"></div>
+      </div>
+      <div className="mt-8 text-center animate-pulse">
+        <h3 className="text-xl font-bold text-white tracking-widest uppercase">REMS</h3>
+        <p className="text-slate-500 text-xs mt-2 uppercase tracking-[0.3em]">Establishing Workspace</p>
+      </div>
+    </div>
+  );
+
+  if (!user) return <Navigate to="/login" replace />;
+
+  // Try to restore previous page, or fallback to role-based dashboard
+  const lastPage = localStorage.getItem('rems_last_active_page');
+  
+  if (lastPage && lastPage !== '/') {
+      return <Navigate to={lastPage} replace />;
+  }
+
+  // Final fallback
+  if (user.role === 'admin') return <Navigate to="/admin" replace />;
+  if (user.role === 'manager') return <Navigate to="/manager" replace />;
+  return <Navigate to="/employee" replace />;
+};
+
 function App() {
   return (
     <Router>
@@ -61,7 +95,7 @@ function App() {
           )}
         </Toaster>
         <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<SignUp />} />
 
