@@ -10,6 +10,10 @@ const SignUp = () => {
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [verifiedToken, setVerifiedToken] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [password, setPassword] = useState('');
   
   // Profile Data
   const { user } = useContext(AuthContext);

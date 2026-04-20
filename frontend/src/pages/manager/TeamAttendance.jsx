@@ -7,13 +7,6 @@ import { formatLastLogout, formatDecimalHours } from '../../utils/format';
 import LiveDuration from '../../components/LiveDuration';
 import { AuthContext } from '../../context/AuthContext';
 
-const STATUS_COLORS = {
-  working:  'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
-  on_break: 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20',
-  idle:     'bg-amber-500/10 text-amber-400 border border-amber-500/20',
-  offline:  'bg-slate-500/10 text-slate-400 border border-slate-500/20',
-};
-
 const ATTENDANCE_COLORS = {
   present:  'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20',
   half_day: 'bg-amber-500/10 text-amber-400 border border-amber-500/20',
@@ -27,8 +20,6 @@ const TeamAttendance = () => {
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState(null);
   const { policy } = useContext(AuthContext);
-  const [liveSharers, setLiveSharers] = useState({}); // { employeeId: true/false }
-  const [viewingEmployee, setViewingEmployee] = useState(null); // { id, name }
 
   // Date filter state for export
   const [startDate, setStartDate] = useState('');
@@ -49,9 +40,6 @@ const TeamAttendance = () => {
     }
   }, []);
 
-  const handleCloseViewer = useCallback(() => {
-    setViewingEmployee(null);
-  }, []);
 
   useEffect(() => {
     fetchTeamAttendance();
@@ -248,7 +236,7 @@ const TeamAttendance = () => {
               <tr>
                 <th className="px-3 py-4 font-semibold tracking-wider text-xs whitespace-nowrap">Date</th>
                 <th className="px-3 py-4 font-semibold tracking-wider text-xs text-left">Team Member</th>
-                <th className="px-3 py-4 font-semibold tracking-wider text-center text-[10px] text-slate-400">Shift (Actual)</th>
+                <th className="px-3 py-4 font-semibold tracking-wider text-center text-[11px] text-slate-400">Shift (Actual)</th>
                 <th className="px-3 py-4 font-semibold tracking-wider text-center text-xs">Attendance</th>
                 <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Work</th>
                 <th className="px-3 py-4 font-semibold tracking-wider text-right text-xs">Break</th>
@@ -258,7 +246,7 @@ const TeamAttendance = () => {
                 <th className="px-3 py-4 font-semibold tracking-wider text-xs text-left text-slate-500 font-medium">Remarks</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-700/50 text-xs">
+            <tbody className="divide-y divide-slate-700/50 text-sm">
               {attendance
                 .filter(record => new Date(record.date) <= new Date())
                 .map((record) => {
@@ -275,11 +263,11 @@ const TeamAttendance = () => {
                         </div>
                       </td>
                       <td className="px-3 py-4 text-center font-mono leading-tight whitespace-nowrap">
-                        <span className="block text-indigo-400 text-[10px] font-bold">
+                        <span className="block text-indigo-400 text-xs font-bold">
                           {record.first_login ? format(new Date(record.first_login), 'hh:mm a') : '--:--'}
                         </span>
-                        <span className="block text-slate-600 text-[9px] my-0.5">to</span>
-                        <span className="block text-rose-400 text-[10px] font-bold">
+                        <span className="block text-slate-600 text-[10px] my-0.5">to</span>
+                        <span className="block text-rose-400 text-xs font-bold">
                           {record.last_logout ? format(new Date(record.last_logout), 'hh:mm a') : '--:--'}
                         </span>
                       </td>
@@ -288,16 +276,18 @@ const TeamAttendance = () => {
                           {record.status?.replace('_', ' ')}
                         </span>
                       </td>
-                      <td className="px-3 py-4 text-right text-emerald-400 font-mono text-[10px]">
-                        <LiveDuration initialSeconds={record.total_work_seconds} status={record.live_status} type="work" isToday={record.date === todayStr} />
+                      <td className="px-3 py-4 text-right text-emerald-400 font-mono text-xs">
+                        <div className="flex flex-col items-end gap-1">
+                          <LiveDuration initialSeconds={record.total_work_seconds} status={record.live_status} type="work" isToday={record.date === todayStr} />
+                        </div>
                       </td>
-                      <td className="px-3 py-4 text-right text-cyan-400 font-mono text-[10px]">
+                      <td className="px-3 py-4 text-right text-cyan-400 font-mono text-xs">
                         <LiveDuration initialSeconds={record.total_break_seconds} status={record.live_status} type="break" isToday={record.date === todayStr} />
                       </td>
-                      <td className="px-3 py-4 text-right text-amber-400 font-mono text-[10px]">
+                      <td className="px-3 py-4 text-right text-amber-400 font-mono text-xs">
                         <LiveDuration initialSeconds={record.total_idle_seconds} status={record.live_status} type="idle" isToday={record.date === todayStr} />
                       </td>
-                      <td className="px-3 py-4 text-right text-orange-400/90 font-mono text-[10px] whitespace-nowrap font-bold">
+                      <td className="px-3 py-4 text-right text-orange-400/90 font-mono text-xs whitespace-nowrap font-bold">
                         {record.missing_seconds > 0 ? (
                            <span>{Math.floor(record.missing_seconds / 3600).toString().padStart(2, '0')}:{Math.floor((record.missing_seconds % 3600) / 60).toString().padStart(2, '0')}:{(record.missing_seconds % 60).toString().padStart(2, '0')}</span>
                         ) : '—'}

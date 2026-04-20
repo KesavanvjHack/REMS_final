@@ -239,7 +239,10 @@ class AttendanceSerializer(serializers.ModelSerializer):
         return round(total / 3600, 2)
 
     def get_missing_seconds(self, obj):
-        """Calculate time gap: Shift Window Duration - Intersection(Work, Shift Window)"""
+        """
+        Calculate time gap: Policy Goal - Intersection(Work, Shift Window).
+        Ensures that 'Gap' reflects the overall daily requirement.
+        """
         from .models import AttendancePolicy
         import datetime
         from django.utils import timezone as django_timezone
@@ -248,7 +251,8 @@ class AttendanceSerializer(serializers.ModelSerializer):
         if not policy:
             return 0
             
-        # 1. Shift Window Definition (Local to the attendance date)
+        # 1. Shift Window & Policy Goal (Target)
+        target_seconds = float(policy.min_working_hours) * 3600
         att_date = obj.date 
         tz = django_timezone.get_current_timezone()
         shift_start = django_timezone.make_aware(datetime.datetime.combine(att_date, policy.shift_start_time), tz)
@@ -257,33 +261,22 @@ class AttendanceSerializer(serializers.ModelSerializer):
         if shift_end <= shift_start: 
             shift_end += datetime.timedelta(days=1)
             
-        # 2. Live Adaptation (Time-Passed Logic)
-        # For 'Today', we only compare work against the time that has ALREADY PASSED
+        # 2. Daily Requirement Progress
         now = django_timezone.now()
-        
-        # Determine the moment in the shift we are currently evaluating
-        # (Capped at shift_end for past/completed days)
-        effective_now = min(now, shift_end)
-        
-        # Baseline: How many seconds SHOULD have been worked so far?
-        # If the shift hasn't started yet, expected time is 0.
-        expected_duration_so_far = max(0, (effective_now - shift_start).total_seconds())
-        
-        # 3. Intersection Math: Only count work sessions that happened WITHIN the shift window
+
+        # 3. Actual Work (Inside window)
         sessions = [(s.start_time, s.end_time or now) for s in obj.work_sessions.all() if (s.end_time or now) > s.start_time]
         merged_presence = self.merge_intervals(sessions)
         
         intersection_duration = 0
         for start, end in merged_presence:
-            # Shift window intersection (Capped at shift_end)
             win_start = max(start, shift_start)
             win_end = min(end, shift_end)
             if win_end > win_start:
                 intersection_duration += (win_end - win_start).total_seconds()
         
-        # 4. Gap Result
-        # Gap = (Target Time Passed) - (Actual Work during that time)
-        return max(0, int(expected_duration_so_far - intersection_duration))
+        # 4. Final Gap = Total Goal - Work done so far (Minimum 0)
+        return max(0, int(target_seconds - intersection_duration))
 
     def get_live_status(self, obj):
         active_session = obj.work_sessions.filter(end_time__isnull=True).first()

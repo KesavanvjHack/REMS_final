@@ -38,8 +38,24 @@ const WorkSession = () => {
     const shiftStart = new Date(now);
     shiftStart.setHours(sH, sM, 0, 0);
     const [eH, eM] = (policy?.shift_end_time || '18:30').split(':').map(Number);
-    const shiftEnd = new Date(now);
+    let shiftEnd = new Date(now);
     shiftEnd.setHours(eH, eM, 0, 0);
+    
+    // OVERNIGHT SHIFT FIX: If end time is before start time, it belongs to the next day
+    if (shiftEnd <= shiftStart) {
+        shiftEnd.setDate(shiftEnd.getDate() + 1);
+        
+        // If current time is early morning (e.g. 1 AM) and shift started yesterday, adjust start
+        if (now < shiftStart && now < shiftEnd) {
+            const yesterdayStart = new Date(shiftStart);
+            yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+            if (now >= yesterdayStart) {
+                // We are inside the overnight shift from yesterday!
+                return false; 
+            }
+        }
+    }
+    
     return now < shiftStart || now > shiftEnd;
   }, [policy, user, now]);
 
@@ -59,6 +75,13 @@ const WorkSession = () => {
          }
       }
     }, 15000);
+
+    // 2. Listen for administrative sync events (Reset, Policy Changes)
+    const handleSyncRequired = () => {
+        console.log('SYNC TRIGGER: Re-fetching status due to administrative change');
+        fetchStatus();
+    };
+    window.addEventListener('rems_sync_required', handleSyncRequired);
 
     // 3. Fast 0.1s tick for smooth live counter + Auto-Idle logic
     const countdownId = setInterval(() => {
@@ -82,6 +105,7 @@ const WorkSession = () => {
     return () => {
        clearInterval(syncIntervalRef.current);
        clearInterval(countdownId);
+       window.removeEventListener('rems_sync_required', handleSyncRequired);
     };
   }, [status]); 
 
@@ -184,8 +208,8 @@ const WorkSession = () => {
     const originalStatus = status;
     try {
       setLoading(true);
-      
-      // We no longer set status optimistically to prevent UI/UX desync on backend failure
+
+      // Proceed with API call
       const response = await api.post(`/sessions/${endpoint}/`, { action });
       
       if (response.data) {

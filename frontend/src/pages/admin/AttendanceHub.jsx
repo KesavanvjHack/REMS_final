@@ -12,7 +12,6 @@ const AttendanceHub = () => {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [viewingEmployee, setViewingEmployee] = useState(null);
   const { policy, user } = useContext(AuthContext);
 
   // Filter states
@@ -360,8 +359,8 @@ const AttendanceHub = () => {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="text-[10px] text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+          <table className="w-full text-left text-sm text-slate-300">
+            <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
               <tr>
                 <th className="px-2 py-3 font-semibold tracking-wider text-xs whitespace-nowrap">Date</th>
                 <th className="px-2 py-3 font-semibold tracking-wider text-xs text-left">Team Member</th>
@@ -422,11 +421,11 @@ const AttendanceHub = () => {
                      </div>
                   </td>
                   <td className="px-2 py-3 text-center font-mono leading-tight whitespace-nowrap">
-                    <span className="block text-indigo-400 text-[10px] font-bold">
+                    <span className="block text-indigo-400 text-xs font-bold">
                       {record.first_login ? format(parseISO(record.first_login), 'hh:mm a') : '--:--'}
                     </span>
-                    <span className="block text-slate-600 text-[9px] my-0.5">to</span>
-                    <span className="block text-rose-400 text-[10px] font-bold">
+                    <span className="block text-slate-600 text-[10px] my-0.5">to</span>
+                    <span className="block text-rose-400 text-xs font-bold">
                       {record.last_logout && record.last_logout !== '--:--' ? format(parseISO(record.last_logout), 'hh:mm a') : '--:--'}
                     </span>
                   </td>
@@ -449,44 +448,46 @@ const AttendanceHub = () => {
                       {displayStatus === 'on_leave' ? 'On Leave' : displayStatus === 'half_day' ? 'Half Day' : displayStatus}
                     </span>
                   </td>
-                  <td className="px-2 py-3 text-emerald-400 font-mono text-[10px] text-right">
-                    <LiveDuration initialSeconds={record.total_work_seconds} status={record.live_status} type="work" isToday={record.date === todayStr} />
+                  <td className="px-2 py-3 text-emerald-400 font-mono text-xs text-right">
+                    <div className="flex flex-col items-end gap-1">
+                      <LiveDuration initialSeconds={record.total_work_seconds} status={record.live_status} type="work" isToday={record.date === todayStr} />
+                    </div>
                   </td>
-                  <td className="px-2 py-3 text-cyan-400 font-mono text-[10px] text-right">
+                  <td className="px-2 py-3 text-cyan-400 font-mono text-xs text-right">
                     <LiveDuration initialSeconds={record.total_break_seconds} status={record.live_status} type="break" isToday={record.date === todayStr} />
                   </td>
-                  <td className="px-2 py-3 text-amber-400 font-mono text-[10px] text-right">
+                  <td className="px-2 py-3 text-amber-400 font-mono text-xs text-right">
                     <LiveDuration initialSeconds={record.total_idle_seconds} status={record.live_status} type="idle" isToday={record.date === todayStr} />
                   </td>
-                   <td className="px-2 py-3 text-orange-400/90 font-mono text-[10px] text-right whitespace-nowrap font-bold">
+                   <td className="px-2 py-3 text-orange-400/90 font-mono text-xs text-right whitespace-nowrap font-bold">
                      {record.missing_seconds > 0 ? (
                         <span>{Math.floor(record.missing_seconds / 3600).toString().padStart(2, '0')}:{Math.floor((record.missing_seconds % 3600) / 60).toString().padStart(2, '0')}:{(record.missing_seconds % 60).toString().padStart(2, '0')}</span>
                      ) : '—'}
                    </td>
                    <td className="px-2 py-3 text-center">
                     {record.is_flagged ? (
-                      <span className="text-rose-400 font-bold text-[9px] flex items-center justify-center gap-1 bg-rose-500/10 px-1 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>
-                        <FlagIcon className="h-2.5 w-2.5" /> Alert
+                      <span className="text-rose-400 font-bold text-[10px] flex items-center justify-center gap-1 bg-rose-500/10 px-1.5 py-0.5 rounded border border-rose-500/20 uppercase tracking-tighter" title={record.flag_reason}>
+                        <FlagIcon className="h-3 w-3" /> Alert
                       </span>
                     ) : (
-                      <span className="text-slate-600 font-mono text-[10px]">—</span>
+                      <span className="text-slate-600 font-mono text-sm">—</span>
                     )}
                   </td>
                   <td className="px-2 py-3">
                     {record.manager_remark ? (
-                      <p className="text-slate-300 text-[10px] italic truncate max-w-[100px]" title={record.manager_remark}>{record.manager_remark}</p>
+                      <p className="text-slate-300 text-xs italic truncate max-w-[120px]" title={record.manager_remark}>{record.manager_remark}</p>
                     ) : record.flag_reason ? (
-                      <p className="text-slate-400 text-[10px] italic truncate max-w-[100px]" title={record.flag_reason}>{record.flag_reason}</p>
+                      <p className="text-slate-400 text-xs italic truncate max-w-[120px]" title={record.flag_reason}>{record.flag_reason}</p>
                     ) : (
-                      <span className="text-slate-600 font-mono text-[10px]">-</span>
+                      <span className="text-slate-600 font-mono text-xs">-</span>
                     )}
                   </td>
                   {user?.role === 'admin' && (
                     <td className="px-2 py-3">
-                      <div className="flex flex-wrap items-center justify-center gap-1">
-                        <button onClick={() => handleOverride(record, 'present')} title="Mark Present" className="w-5 h-5 flex items-center justify-center bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[9px] font-bold rounded hover:bg-emerald-500/20 transition-colors">P</button>
-                        <button onClick={() => handleOverride(record, 'half_day')} title="Mark Half Day" className="w-5 h-5 flex items-center justify-center bg-sky-500/10 text-sky-400 border border-sky-500/20 text-[9px] font-bold rounded hover:bg-sky-500/20 transition-colors">H</button>
-                        <button onClick={() => handleOverride(record, 'absent')} title="Mark Absent" className="w-5 h-5 flex items-center justify-center bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-bold rounded hover:bg-rose-500/20 transition-colors">A</button>
+                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        <button onClick={() => handleOverride(record, 'present')} title="Mark Present" className="w-6 h-6 flex items-center justify-center bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold rounded-lg hover:bg-emerald-500/20 transition-all active:scale-95">P</button>
+                        <button onClick={() => handleOverride(record, 'half_day')} title="Mark Half Day" className="w-6 h-6 flex items-center justify-center bg-sky-500/10 text-sky-400 border border-sky-500/20 text-xs font-bold rounded-lg hover:bg-sky-500/20 transition-all active:scale-95">H</button>
+                        <button onClick={() => handleOverride(record, 'absent')} title="Mark Absent" className="w-6 h-6 flex items-center justify-center bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs font-bold rounded-lg hover:bg-rose-500/20 transition-all active:scale-95">A</button>
                       </div>
                     </td>
                   )}

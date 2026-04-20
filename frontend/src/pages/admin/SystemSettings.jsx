@@ -32,10 +32,6 @@ const SystemSettings = () => {
           </h3>
           <div className="space-y-4">
             <div>
-              <label htmlFor="sessionTimeout" className="block text-sm font-medium text-slate-400 mb-1">Session Timeout (Minutes)</label>
-              <input type="number" id="sessionTimeout" name="session-timeout" defaultValue={60} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
-            </div>
-            <div>
               <label htmlFor="maxLoginAttempts" className="block text-sm font-medium text-slate-400 mb-1">Max Failed Login Attempts</label>
               <input type="number" id="maxLoginAttempts" name="max-login-attempts" defaultValue={5} className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" />
             </div>

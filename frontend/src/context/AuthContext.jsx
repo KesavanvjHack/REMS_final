@@ -70,8 +70,14 @@ export const AuthProvider = ({ children }) => {
             [data.user_id]: data.status
           }));
         } else if (data.type === 'policy_update') {
-          console.log('Policy update received');
-          toast.success('Attendance Policy updated');
+          console.log('Policy update received - triggering global sync');
+          // Re-fetch everything to reflect new shift hours or session resets
+          fetchInitialStatuses(currentUser.role);
+          
+          // Emit a custom event so specific pages (like WorkSession) can re-fetch their local status
+          window.dispatchEvent(new CustomEvent('rems_sync_required'));
+          
+          toast.success('System policy updated', { icon: '🔄' });
         } else if (data.type === 'notification' && data.recipient_id === currentUser.id) {
           setNotifications((prev) => {
             if (prev.some(n => n.id === data.notification_id)) return prev;

@@ -348,7 +348,7 @@ class AttendanceService:
             net_shift_work_seconds = net_work_seconds
 
         # 8. Status Determination (Based on Shift-Aware Net Hours)
-        total_work_hours = (net_shift_work_seconds + 60) / 3600 # Epsilon Grace Period (1 min)
+        total_work_hours = net_shift_work_seconds / 3600
         
         auto_remark = ""
         if attendance.status in (attendance.STATUS_ON_LEAVE, attendance.STATUS_HOLIDAY):
@@ -364,7 +364,7 @@ class AttendanceService:
             auto_remark = f"Shift hours ({total_work_hours:.2f}h) below required {min_hours}h for Full Day."
         elif total_work_hours > 0:
             status = attendance.STATUS_ABSENT
-            auto_remark = f"Insufficient shift time: {total_work_hours:.2f}h recorded, below minimum {half_day_hours}h for Half-Day."
+            auto_remark = f"Insufficient work for credit: {total_work_hours:.2f}h recorded within shift (Requirement: {half_day_hours}h for Half-Day)."
         else:
             status = attendance.STATUS_ABSENT
             auto_remark = "No work recorded within shift hours."
@@ -414,6 +414,8 @@ class AttendanceService:
             
         now_local = timezone.localtime(timezone.now())
         
+        tz = timezone.get_current_timezone()
+        
         # 1. Handle Past Days: Find ALL open sessions where attendance date < today
         past_open_sessions = WorkSession.objects.filter(
             end_time__isnull=True,
@@ -424,12 +426,12 @@ class AttendanceService:
         for session in past_open_sessions:
             # For past sessions, we close them at the shift_end_time of THAT SPECIFIC DAY
             session_date = session.attendance.date
-            close_time = timezone.make_aware(datetime.datetime.combine(session_date, policy.shift_end_time))
+            close_time = timezone.make_aware(datetime.datetime.combine(session_date, policy.shift_end_time), tz)
             WorkSessionService.stop_session(session.attendance.user, end_time=close_time, is_auto=True, session=session)
             count += 1
 
         # 2. Handle Today: Find open sessions for today if shift end time has passed
-        shift_end_dt_today = timezone.make_aware(datetime.datetime.combine(now_local.date(), policy.shift_end_time))
+        shift_end_dt_today = timezone.make_aware(datetime.datetime.combine(now_local.date(), policy.shift_end_time), tz)
         
         if now_local >= shift_end_dt_today:
             today_open_sessions = WorkSession.objects.filter(

@@ -10,6 +10,18 @@ class StatusConsumer(AsyncWebsocketConsumer):
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
+        # PASSIVE AUTOMATION: Trigger policy checks whenever someone logs in
+        await self.trigger_passive_automation()
+
+    async def trigger_passive_automation(self):
+        from .services import AttendanceService
+        # Run cleanup tasks silently in the background
+        try:
+            await database_sync_to_async(AttendanceService.auto_checkout_all_active_sessions)()
+            await database_sync_to_async(AttendanceService.notify_upcoming_shifts)()
+        except Exception:
+            pass
+
     async def disconnect(self, close_code):
         # Leave global group
         await self.channel_layer.group_discard(self.group_name, self.channel_name)
@@ -69,3 +81,5 @@ class StatusConsumer(AsyncWebsocketConsumer):
 
     async def policy_update(self, event):
         await self.send(text_data=json.dumps({ 'type': 'policy_update' }))
+
+
