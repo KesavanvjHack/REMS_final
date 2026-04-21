@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
 import { PencilSquareIcon, TrashIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
+import ResponsiveTable from '../../components/ResponsiveTable';
 import toast from 'react-hot-toast';
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from 'date-fns';
 
@@ -193,18 +194,25 @@ const UserManagement = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">User Management</h1>
+      <div className="flex flex-col gap-4 mb-8">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">User Management</h1>
+          <button 
+             onClick={openAddModal}
+             className="inline-flex xl:hidden bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg font-medium shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all items-center justify-center gap-2 whitespace-nowrap">
+            <span className="text-lg">+</span> <span>Add</span>
+          </button>
+        </div>
         
-        <div className="flex flex-col xl:flex-row items-start xl:items-center gap-3">
-          <div className="flex flex-col md:flex-row flex-wrap items-start md:items-center gap-3 bg-slate-800/50 p-2 rounded-xl border border-slate-700/50">
-            <div className="flex gap-2 flex-wrap">
+        <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-3">
+          <div className="flex flex-col md:flex-row flex-wrap items-start md:items-center gap-3 bg-slate-800/50 p-2 rounded-xl border border-slate-700/50 w-full xl:w-auto">
+            <div className="flex gap-2 flex-wrap w-full md:w-auto">
               <select
                 id="exportRole"
                 name="export-role"
                 value={exportRole}
                 onChange={(e) => setExportRole(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
+                className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="all">All Roles</option>
                 <option value="employee">Employee</option>
@@ -217,7 +225,7 @@ const UserManagement = () => {
                 name="export-type"
                 value={exportType}
                 onChange={(e) => handleQuickSelect(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
+                className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="custom">Custom Dates</option>
                 <option value="weekly">This Week</option>
@@ -225,14 +233,14 @@ const UserManagement = () => {
               </select>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full md:w-auto">
               <input 
                 type="date" 
                 id="exportStartDate"
                 name="export-start-date"
                 value={startDate}
                 onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+                className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
               />
               <span className="text-slate-500 text-sm">to</span>
               <input 
@@ -241,13 +249,13 @@ const UserManagement = () => {
                 name="export-end-date"
                 value={endDate}
                 onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+                className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
               />
             </div>
             
             <button 
               onClick={handleExport}
-              className="flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap w-full sm:w-auto"
+              className="flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap w-full md:w-auto"
             >
               <ArrowDownTrayIcon className="h-4 w-4" />
               <span>Export</span>
@@ -256,7 +264,7 @@ const UserManagement = () => {
 
           <button 
              onClick={openAddModal}
-             className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg font-medium shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all flex items-center justify-center gap-2 whitespace-nowrap w-full xl:w-auto">
+             className="hidden xl:flex bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg font-medium shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all items-center justify-center gap-2 whitespace-nowrap">
             <span className="text-lg">+</span> <span>Add User</span>
           </button>
         </div>

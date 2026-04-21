@@ -86,12 +86,12 @@ const OrganizationManagement = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-white">Organization Management</h1>
+      <div className="flex justify-between items-center gap-4 mb-6">
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">Organization Management</h1>
         <button 
            onClick={openAddModal}
-           className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-lg font-medium shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all flex items-center justify-center gap-2 whitespace-nowrap w-full sm:w-auto">
-          <span className="text-lg">+</span> <span>Add Department</span>
+           className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 sm:py-2.5 rounded-lg font-medium shadow-[0_0_15px_rgba(99,102,241,0.3)] transition-all flex items-center justify-center gap-2 whitespace-nowrap w-auto">
+          <span className="text-lg">+</span> <span className="hidden sm:inline">Add Department</span><span className="sm:hidden">Add</span>
         </button>
       </div>
 

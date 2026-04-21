@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
+import ResponsiveTable from '../../components/ResponsiveTable';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend 
 } from 'recharts';
@@ -56,50 +57,45 @@ const AdminReports = () => {
         </div>
       </div>
 
-      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden mt-8">
-        <div className="p-6 border-b border-slate-700">
-          <h2 className="text-lg font-semibold text-white">Detailed Attendance Rates</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
-              <tr>
-                <th className="px-6 py-4 font-semibold">Employee</th>
-                <th className="px-6 py-4 font-semibold text-center">Attendance Rate</th>
-                <th className="px-6 py-4 font-semibold text-center">Total Present</th>
-                <th className="px-6 py-4 font-semibold text-center">Total Absent</th>
-                <th className="px-6 py-4 font-semibold text-center">Half Days</th>
-                <th className="px-6 py-4 font-semibold text-center">On Leave</th>
+      <ResponsiveTable title="Detailed Attendance Rates">
+        <table className="w-full text-left text-sm text-slate-300">
+          <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+            <tr>
+              <th className="px-6 py-4 font-semibold">Employee</th>
+              <th className="px-6 py-4 font-semibold text-center">Rate</th>
+              <th className="px-6 py-4 font-semibold text-center">Present</th>
+              <th className="px-6 py-4 font-semibold text-center">Absent</th>
+              <th className="px-6 py-4 font-semibold text-center">Half Days</th>
+              <th className="px-6 py-4 font-semibold text-center">On Leave</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700/50">
+            {teamData.map((emp) => (
+              <tr key={emp.user_id} className="hover:bg-slate-700/20 transition-colors">
+                <td className="px-6 py-4 font-medium text-slate-200">{emp.user_name}</td>
+                <td className="px-6 py-4 text-center">
+                  <span className={`px-2.5 py-1 rounded bg-slate-900 border font-medium
+                    ${emp.attendance_rate >= 90 ? 'text-emerald-400 border-emerald-500/30' : 
+                      emp.attendance_rate >= 75 ? 'text-amber-400 border-amber-500/30' : 
+                      'text-rose-400 border-rose-500/30'}
+                  `}>
+                    {emp.attendance_rate}%
+                  </span>
+                </td>
+                <td className="px-6 py-4 text-center text-emerald-400">{emp.present}</td>
+                <td className="px-6 py-4 text-center text-rose-400">{emp.absent}</td>
+                <td className="px-6 py-4 text-center text-amber-400">{emp.half_day}</td>
+                <td className="px-6 py-4 text-center text-cyan-400">{emp.on_leave}</td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700/50">
-              {teamData.map((emp) => (
-                <tr key={emp.user_id} className="hover:bg-slate-700/20 transition-colors">
-                  <td className="px-6 py-4 font-medium text-slate-200">{emp.user_name}</td>
-                  <td className="px-6 py-4 text-center">
-                    <span className={`px-2.5 py-1 rounded bg-slate-900 border font-medium
-                      ${emp.attendance_rate >= 90 ? 'text-emerald-400 border-emerald-500/30' : 
-                        emp.attendance_rate >= 75 ? 'text-amber-400 border-amber-500/30' : 
-                        'text-rose-400 border-rose-500/30'}
-                    `}>
-                      {emp.attendance_rate}%
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 text-center text-emerald-400">{emp.present}</td>
-                  <td className="px-6 py-4 text-center text-rose-400">{emp.absent}</td>
-                  <td className="px-6 py-4 text-center text-amber-400">{emp.half_day}</td>
-                  <td className="px-6 py-4 text-center text-cyan-400">{emp.on_leave}</td>
-                </tr>
-              ))}
-              {teamData.length === 0 && (
-                <tr>
-                  <td colSpan="6" className="px-6 py-8 text-center text-slate-500">No data available</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            ))}
+            {teamData.length === 0 && (
+              <tr>
+                <td colSpan="6" className="px-6 py-8 text-center text-slate-500">No data available</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </ResponsiveTable>
     </div>
   );
 };

@@ -167,11 +167,8 @@ const MyAttendance = () => {
     
     let placeholderGap = 0;
     if (!holiday) {
-      // Calculate shift duration from policy (fallback to 8h)
-      const [s_h, s_m] = (policy?.shift_start_time || '09:30').split(':').map(Number);
-      const [e_h, e_m] = (policy?.shift_end_time || '17:30').split(':').map(Number);
-      placeholderGap = (e_h * 3600 + e_m * 60) - (s_h * 3600 + s_m * 60);
-      if (placeholderGap <= 0) placeholderGap += 86400;
+      // Use present_hours from policy (fallback to 8h)
+      placeholderGap = (policy?.present_hours || policy?.min_working_hours || 8) * 3600;
     }
 
     return {

@@ -137,45 +137,39 @@ const TeamAttendance = () => {
   
   return (
     <div className="space-y-6 page-fade-in">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between xl:items-start gap-4 mb-6">
+      <div className="flex items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-indigo-500/20 rounded-lg">
+          <div className="hidden sm:flex p-2 bg-indigo-500/20 rounded-lg">
             <UserGroupIcon className="h-6 w-6 text-indigo-400" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">Team Timesheet</h1>
-            {lastUpdated && (
-              <span className="text-[10px] text-slate-500 font-mono mt-1 block">
-                Last synced: {lastUpdated.toLocaleTimeString()}
-              </span>
-            )}
-            <p className="text-xs text-slate-500 mt-0.5">
-              Showing your direct reports • Live status • Updated every 1.0m
-            </p>
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">Team Timesheet</h1>
+            <p className="text-[10px] text-slate-500 hidden sm:block">Showing direct reports • Updated every 1m</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={() => fetchTeamAttendance()}
-            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg border border-slate-700 transition-all flex items-center gap-2"
-          >
-            <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            <span className="text-xs font-medium hidden sm:inline">Refresh</span>
-          </button>
-        </div>
+        <button 
+          onClick={() => fetchTeamAttendance()}
+          className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg border border-slate-700 transition-all flex items-center gap-2 shrink-0"
+        >
+          <ArrowPathIcon className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+          <span className="text-xs font-medium hidden sm:inline">Refresh</span>
+          <span className="text-[10px] text-slate-500 font-mono sm:hidden">
+            {lastUpdated?.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        </button>
       </div>
 
-      <div className="flex flex-col xl:flex-row items-start xl:items-center gap-4">
-        <div className="flex flex-col sm:flex-row flex-wrap items-start sm:items-center gap-3 bg-slate-800/50 p-2.5 rounded-xl border border-slate-700/50">
-          <div className="flex gap-2 flex-wrap">
+      <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-4">
+        <div className="flex flex-col md:flex-row flex-wrap items-stretch md:items-center gap-3 bg-slate-800/50 p-2 rounded-xl border border-slate-700/50 w-full">
+          <div className="flex gap-2 flex-wrap w-full md:w-auto">
             <label htmlFor="exportEmployee" className="sr-only">Filter by Employee</label>
             <select
               id="exportEmployee"
               name="export-employee"
               value={exportEmployee}
               onChange={(e) => setExportEmployee(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+              className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
             >
               <option value="all">All Personnel</option>
               {uniqueEmployees.map(empName => (
@@ -189,7 +183,7 @@ const TeamAttendance = () => {
               name="export-type"
               value={exportType}
               onChange={(e) => handleQuickSelect(e.target.value)}
-              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500"
+              className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
             >
               <option value="custom">Custom Dates</option>
               <option value="weekly">This Week</option>
@@ -197,34 +191,32 @@ const TeamAttendance = () => {
             </select>
           </div>
           
-          <div className="flex items-center gap-2">
-            <label htmlFor="exportStartDate" className="sr-only">Export Start Date</label>
+          <div className="flex items-center gap-2 w-full md:w-auto">
             <input 
               type="date" 
               id="exportStartDate"
               name="export-start-date"
               value={startDate}
               onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
-              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+              className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
             />
             <span className="text-slate-500 text-xs">to</span>
-            <label htmlFor="exportEndDate" className="sr-only">Export End Date</label>
             <input 
               type="date" 
               id="exportEndDate"
               name="export-end-date"
               value={endDate}
               onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
-              className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-2 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+              className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
             />
           </div>
 
           <button 
             onClick={handleExport}
-            className="flex items-center gap-2 px-3 py-2 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap"
+            className="flex items-center justify-center gap-2 px-4 py-1.5 bg-indigo-500 hover:bg-indigo-600 active:bg-indigo-700 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap w-full md:w-auto md:ml-auto"
           >
             <ArrowDownTrayIcon className="h-4 w-4" />
-            Export CSV
+            <span>Export CSV</span>
           </button>
         </div>
       </div>

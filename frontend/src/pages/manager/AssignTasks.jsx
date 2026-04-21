@@ -200,25 +200,35 @@ const AssignTasks = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-100 flex items-center gap-2">
-            <ClipboardDocumentCheckIcon className="h-6 w-6 text-indigo-400" />
-            Assign Tasks
-          </h2>
-          <p className="text-slate-400 mt-1">Manage and assign tasks to your team members.</p>
+      <div className="flex flex-col gap-6 mb-8">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-100 flex items-center gap-2">
+              <ClipboardDocumentCheckIcon className="hidden sm:block h-6 w-6 text-indigo-400" />
+              Assign Tasks
+            </h2>
+            <p className="text-xs text-slate-500 hidden sm:block">Manage and assign tasks to your team members.</p>
+          </div>
+          <button 
+            onClick={() => openModal('create')}
+            className="xl:hidden flex items-center justify-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-all whitespace-nowrap font-medium shadow-lg shadow-indigo-500/20"
+          >
+            <PlusIcon className="h-5 w-5" />
+            <span className="hidden sm:inline">New Task</span>
+            <span className="sm:hidden text-sm">Assign</span>
+          </button>
         </div>
         
-        <div className="flex flex-col xl:flex-row items-start xl:items-center gap-3">
+        <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-3">
           {/* Export Controls */}
-          <div className="flex flex-col md:flex-row flex-wrap items-start md:items-center gap-3 bg-slate-800/50 p-2 rounded-xl border border-slate-700/50">
-            <div className="flex gap-2 flex-wrap">
+          <div className="flex flex-col md:flex-row flex-wrap items-stretch md:items-center gap-3 bg-slate-800/50 p-2 rounded-xl border border-slate-700/50 w-full overflow-hidden">
+            <div className="flex gap-2 flex-wrap w-full md:w-auto">
               <select 
                 id="exportAssignedTo"
                 name="export-assigned-to"
                 value={exportAssignedTo}
                 onChange={(e) => setExportAssignedTo(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
+                className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="all">All Employees</option>
                 <option value="unassigned">Unassigned</option>
@@ -232,7 +242,7 @@ const AssignTasks = () => {
                 name="export-status"
                 value={exportStatus}
                 onChange={(e) => setExportStatus(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
+                className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="all">All Statuses</option>
                 <option value="todo">To Do</option>
@@ -245,7 +255,7 @@ const AssignTasks = () => {
                 name="export-type"
                 value={exportType}
                 onChange={(e) => handleQuickSelect(e.target.value)}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
+                className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500"
               >
                 <option value="custom">Custom</option>
                 <option value="weekly">This Week</option>
@@ -253,14 +263,14 @@ const AssignTasks = () => {
               </select>
             </div>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full md:w-auto">
               <input 
                 type="date" 
                 id="exportStartDate"
                 name="export-start-date"
                 value={startDate}
                 onChange={(e) => { setStartDate(e.target.value); setExportType('custom'); }}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+                className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
               />
               <span className="text-slate-500 text-sm">to</span>
               <input 
@@ -269,13 +279,13 @@ const AssignTasks = () => {
                 name="export-end-date"
                 value={endDate}
                 onChange={(e) => { setEndDate(e.target.value); setExportType('custom'); }}
-                className="bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
+                className="flex-1 md:flex-none bg-slate-900 border border-slate-700 text-slate-300 rounded-lg px-2 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 [color-scheme:dark]"
               />
             </div>
 
             <button 
               onClick={handleExport}
-              className="flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap w-full sm:w-auto"
+              className="flex items-center justify-center gap-2 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-white rounded-lg transition-colors text-sm font-medium whitespace-nowrap w-full md:w-auto md:ml-auto"
             >
               <ArrowDownTrayIcon className="h-4 w-4" />
               <span>Export</span>
@@ -284,7 +294,7 @@ const AssignTasks = () => {
 
           <button 
             onClick={() => openModal('create')}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-all whitespace-nowrap w-full xl:w-auto font-medium shadow-lg shadow-indigo-500/20"
+            className="hidden xl:flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-lg transition-all whitespace-nowrap font-medium shadow-lg shadow-indigo-500/20"
           >
             <PlusIcon className="h-5 w-5" />
             <span>Assign New Task</span>

@@ -886,18 +886,27 @@ class TeamTimesheetView(APIView):
                     record['department_name'] = member.department.name
             else:
                 # Generate a dummy 'absent' record
+                from .models import AttendancePolicy
+                policy = AttendancePolicy.objects.filter(is_active=True, department=member.department).first()
+                if not policy:
+                    policy = AttendancePolicy.objects.filter(is_active=True, department__isnull=True).first()
+                
+                target_seconds = float(policy.min_working_hours * 3600) if policy else 28800 # 8h fallback
+
                 record = {
                     'id': f"dummy_{member.id}_{today}",
                     'user': member.id,
                     'user_name': member.full_name,
                     'user_email': member.email,
+                    'user_role': member.role,
                     'department_name': member.department.name if member.department else None,
                     'date': str(today),
                     'status': 'absent',
-                    'work_hours': '00:00:00',
+                    'work_hours': '0.00',
                     'total_work_seconds': 0,
                     'total_break_seconds': 0,
                     'total_idle_seconds': 0,
+                    'missing_seconds': target_seconds,
                     'is_flagged': False,
                     'flag_reason': '',
                     'manager_remark': '',

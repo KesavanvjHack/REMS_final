@@ -1,5 +1,6 @@
 import { useState, useEffect, useContext } from 'react';
 import api from '../../api/axios';
+import ResponsiveTable from '../../components/ResponsiveTable';
 import { format, startOfWeek, startOfMonth, endOfWeek, endOfMonth } from 'date-fns';
 import { CalendarIcon, TrashIcon, ArrowDownTrayIcon, UsersIcon } from '@heroicons/react/24/outline';
 import { AuthContext } from '../../context/AuthContext';
@@ -154,11 +155,16 @@ const HolidayManagement = () => {
   return (
     <div className="space-y-8 pb-10 page-fade-in">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-indigo-500/20 rounded-lg">
-          <CalendarIcon className="h-6 w-6 text-indigo-400" />
+      <div className="flex items-center justify-between gap-4 mb-2">
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:flex p-2 bg-indigo-500/20 rounded-lg">
+            <CalendarIcon className="h-6 w-6 text-indigo-400" />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-white">Leave & Holidays</h1>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-white">Leave & Holiday Management</h1>
+        <div className="text-xs sm:text-sm text-slate-400 font-medium px-3 py-1.5 bg-slate-800/50 rounded-lg border border-slate-700/50">
+          {format(new Date(), 'MMM dd, yyyy')}
+        </div>
       </div>
 
       {/* Export Section (MOVED TO TOP) */}
@@ -272,87 +278,76 @@ const HolidayManagement = () => {
       </div>
 
       {/* Today's Leaves Section (MOVED TO MIDDLE) */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden mb-8">
-        <div className="p-6 border-b border-slate-700 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <UsersIcon className="h-5 w-5 text-indigo-400" />
-            <h2 className="text-lg font-semibold text-white">Today's Leaves (Employees & Managers)</h2>
-          </div>
-          <div className="text-sm text-slate-400 font-medium">
-            {format(new Date(), 'EEEE, MMMM do, yyyy')}
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
-              <tr>
-                <th className="px-6 py-4 font-semibold">Name</th>
-                <th className="px-6 py-4 font-semibold">Role</th>
-                <th className="px-6 py-4 font-semibold">Leave Type</th>
-                <th className="px-6 py-4 font-semibold">Reason</th>
-                <th className="px-6 py-4 font-semibold">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700/50">
-              {loadingLeaves ? (
-                [...Array(3)].map((_, i) => (
-                  <tr key={i} className="h-16 skeleton-pulse">
-                    <td colSpan="5"></td>
-                  </tr>
-                ))
-              ) : todaysLeaves.length === 0 ? (
-                <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-500">No leaves logged for today.</td></tr>
-              ) : (
-                todaysLeaves.map((leave) => (
-                  <tr key={leave.id} className="hover:bg-slate-700/20 transition-colors">
-                    <td className="px-6 py-4">
-                      <div className="font-medium text-slate-200">{leave.employee_name || 'N/A'}</div>
-                      <div className="text-xs text-slate-500">{leave.employee_email || ''}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`capitalize px-2 py-1 rounded text-xs border ${
-                        leave.employee_role === 'manager' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-slate-900 text-slate-300 border-slate-700'
-                      }`}>
-                        {leave.employee_role || 'Employee'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">{leave.leave_type === '-' ? '-' : (leave.leave_type || 'General')}</td>
-                    <td className="px-6 py-4 max-w-[200px] truncate" title={leave.reason}>{leave.reason}</td>
-                    <td className="px-6 py-4">
-                      {(() => {
-                        const now = new Date();
-                        const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
-                        const istDate = new Date(istString);
-                        const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
-                        const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
-                        const shiftEndMinutes = endHour * 60 + endMin;
-                        const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
+      <ResponsiveTable title="Today's Leaves">
+        <table className="w-full text-left text-sm text-slate-300">
+          <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+            <tr>
+              <th className="px-6 py-4 font-semibold">Name</th>
+              <th className="px-6 py-4 font-semibold">Role</th>
+              <th className="px-6 py-4 font-semibold">Leave Type</th>
+              <th className="px-6 py-4 font-semibold">Reason</th>
+              <th className="px-6 py-4 font-semibold">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700/50">
+            {loadingLeaves ? (
+              [...Array(3)].map((_, i) => (
+                <tr key={i} className="h-16 skeleton-pulse">
+                  <td colSpan="5"></td>
+                </tr>
+              ))
+            ) : todaysLeaves.length === 0 ? (
+              <tr><td colSpan="5" className="px-6 py-8 text-center text-slate-500">No leaves logged for today.</td></tr>
+            ) : (
+              todaysLeaves.map((leave) => (
+                <tr key={leave.id} className="hover:bg-slate-700/20 transition-colors">
+                  <td className="px-6 py-4">
+                    <div className="font-medium text-slate-200">{leave.employee_name || 'N/A'}</div>
+                    <div className="text-xs text-slate-500">{leave.employee_email || ''}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`capitalize px-2 py-1 rounded text-xs border ${
+                      leave.employee_role === 'manager' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' : 'bg-slate-900 text-slate-300 border-slate-700'
+                    }`}>
+                      {leave.employee_role || 'Employee'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">{leave.leave_type === '-' ? '-' : (leave.leave_type || 'General')}</td>
+                  <td className="px-6 py-4 max-w-[200px] truncate" title={leave.reason}>{leave.reason}</td>
+                  <td className="px-6 py-4">
+                    {(() => {
+                      const now = new Date();
+                      const istString = now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" });
+                      const istDate = new Date(istString);
+                      const currentMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+                      const [endHour, endMin] = (policy?.shift_end_time || '17:30').split(':').map(Number);
+                      const shiftEndMinutes = endHour * 60 + endMin;
+                      const isBeforeShiftEnd = currentMinutes < shiftEndMinutes;
 
-                        const isCalculating = isBeforeShiftEnd && 
-                                            leave.status === 'absent';
-                        
-                        const displayStatus = isCalculating ? 'CALCULATING...' : leave.status.toUpperCase();
+                      const isCalculating = isBeforeShiftEnd && 
+                                          leave.status === 'absent';
+                      
+                      const displayStatus = isCalculating ? 'CALCULATING...' : leave.status.toUpperCase();
 
-                        return (
-                          <span className={`px-2 py-1 rounded text-xs border ${
-                            isCalculating ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
-                            leave.status === 'on_leave' || leave.status === 'approved' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' :
-                            leave.status === 'rejected' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
-                            leave.status === 'cancelled' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' :
-                            'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                          }`}>
-                            {displayStatus}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                      return (
+                        <span className={`px-2 py-1 rounded text-xs border ${
+                          isCalculating ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                          leave.status === 'on_leave' || leave.status === 'approved' ? 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20' :
+                          leave.status === 'rejected' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' :
+                          leave.status === 'cancelled' ? 'bg-slate-500/10 text-slate-400 border-slate-500/20' :
+                          'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                        }`}>
+                          {displayStatus}
+                        </span>
+                      );
+                    })()}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </ResponsiveTable>
 
       {/* Holiday Management Section (MOVED TO BOTTOM) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
@@ -404,56 +399,51 @@ const HolidayManagement = () => {
           </form>
         </div>
 
-        <div className="lg:col-span-2 bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden flex flex-col">
-          <div className="p-6 border-b border-slate-700">
-            <h2 className="text-lg font-semibold text-white">Upcoming Holidays</h2>
-          </div>
-          <div className="flex-1 overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-300">
-              <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
-                <tr>
-                  <th className="px-6 py-4 font-semibold">Date</th>
-                  <th className="px-6 py-4 font-semibold">Holiday Name</th>
-                  <th className="px-6 py-4 font-semibold">Type</th>
-                  <th className="px-6 py-4 text-right font-semibold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-700/50">
-                {loading ? (
-                  [...Array(3)].map((_, i) => (
-                    <tr key={i} className="h-16 skeleton-pulse">
-                      <td colSpan="4"></td>
-                    </tr>
-                  ))
-                ) : holidays.length === 0 ? (
-                  <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-500">No holidays configured</td></tr>
-                ) : (
-                  holidays.map((h) => (
-                    <tr key={h.id} className="hover:bg-slate-700/20 transition-colors">
-                      <td className="px-6 py-4 font-medium text-slate-200">{format(new Date(h.date), 'MMM dd, yyyy')}</td>
-                      <td className="px-6 py-4">{h.name}</td>
-                      <td className="px-6 py-4">
-                        {h.is_optional ? (
-                          <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 text-xs border border-amber-500/20">Optional</span>
-                        ) : (
-                          <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/20">Mandatory</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => handleDeleteHoliday(h.id)}
-                          className="text-rose-400 hover:text-rose-300 p-2 rounded-lg hover:bg-rose-500/10 transition-colors"
-                        >
-                          <TrashIcon className="h-5 w-5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ResponsiveTable title="Upcoming Holidays" className="lg:col-span-2">
+          <table className="w-full text-left text-sm text-slate-300">
+            <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+              <tr>
+                <th className="px-6 py-4 font-semibold">Date</th>
+                <th className="px-6 py-4 font-semibold">Holiday Name</th>
+                <th className="px-6 py-4 font-semibold">Type</th>
+                <th className="px-6 py-4 text-right font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/50">
+              {loading ? (
+                [...Array(3)].map((_, i) => (
+                  <tr key={i} className="h-16 skeleton-pulse">
+                    <td colSpan="4"></td>
+                  </tr>
+                ))
+              ) : holidays.length === 0 ? (
+                <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-500">No holidays configured</td></tr>
+              ) : (
+                holidays.map((h) => (
+                  <tr key={h.id} className="hover:bg-slate-700/20 transition-colors">
+                    <td className="px-6 py-4 font-medium text-slate-200">{format(new Date(h.date), 'MMM dd, yyyy')}</td>
+                    <td className="px-6 py-4">{h.name}</td>
+                    <td className="px-6 py-4">
+                      {h.is_optional ? (
+                        <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 text-xs border border-amber-500/20">Optional</span>
+                      ) : (
+                        <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/20">Mandatory</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button
+                        onClick={() => handleDeleteHoliday(h.id)}
+                        className="text-rose-400 hover:text-rose-300 p-2 rounded-lg hover:bg-rose-500/10 transition-colors"
+                      >
+                        <TrashIcon className="h-5 w-5" />
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </ResponsiveTable>
       </div>
     </div>
   );

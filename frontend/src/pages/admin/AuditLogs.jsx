@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/axios';
+import ResponsiveTable from '../../components/ResponsiveTable';
 import { format, startOfWeek, startOfMonth, endOfWeek, endOfMonth } from 'date-fns';
 import { ClipboardDocumentListIcon, ArrowDownTrayIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
@@ -270,51 +271,49 @@ const AuditLogs = () => {
       </div>
 
       {/* Main Audit Logs Table */}
-      <div className="bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden mt-6">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
-              <tr>
-                <th className="px-6 py-4 font-semibold tracking-wider">Timestamp</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Action</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">User</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">Description</th>
-                <th className="px-6 py-4 font-semibold tracking-wider">IP Address</th>
+      <ResponsiveTable title="System Audit Trails">
+        <table className="w-full text-left text-sm text-slate-300">
+          <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
+            <tr>
+              <th className="px-6 py-4 font-semibold tracking-wider">Timestamp</th>
+              <th className="px-6 py-4 font-semibold tracking-wider">Action</th>
+              <th className="px-6 py-4 font-semibold tracking-wider">User</th>
+              <th className="px-6 py-4 font-semibold tracking-wider">Description</th>
+              <th className="px-6 py-4 font-semibold tracking-wider">IP Address</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-700/50">
+            {filteredLogs.map((log) => (
+              <tr key={log.id} className="hover:bg-slate-700/20 transition-colors">
+                <td className="px-6 py-4 whitespace-nowrap text-slate-400 font-mono text-xs">
+                  {format(new Date(log.timestamp), 'yyyy-MM-dd HH:mm:ss')}
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider
+                    ${log.action_type === 'login' || log.action_type === 'logout' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : 
+                      log.action_type === 'create' || log.action_type === 'approve' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
+                      log.action_type === 'delete' || log.action_type === 'reject' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
+                      log.action_type === 'policy_change' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
+                      'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}
+                  `}>
+                    {log.action_type}
+                  </span>
+                </td>
+                <td className="px-6 py-4 font-medium text-slate-200">{log.user_email || 'System'}</td>
+                <td className="px-6 py-4 truncate max-w-sm" title={log.description}>{log.description}</td>
+                <td className="px-6 py-4 font-mono text-xs text-slate-400">{log.ip_address || '-'}</td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-700/50">
-              {filteredLogs.map((log) => (
-                <tr key={log.id} className="hover:bg-slate-700/20 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap text-slate-400 font-mono text-xs">
-                    {format(new Date(log.timestamp), 'yyyy-MM-dd HH:mm:ss')}
-                  </td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider
-                      ${log.action_type === 'login' || log.action_type === 'logout' ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20' : 
-                        log.action_type === 'create' || log.action_type === 'approve' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                        log.action_type === 'delete' || log.action_type === 'reject' ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20' :
-                        log.action_type === 'policy_change' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                        'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}
-                    `}>
-                      {log.action_type}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 font-medium text-slate-200">{log.user_email || 'System'}</td>
-                  <td className="px-6 py-4 truncate max-w-sm" title={log.description}>{log.description}</td>
-                  <td className="px-6 py-4 font-mono text-xs text-slate-400">{log.ip_address || '-'}</td>
-                </tr>
-              ))}
-              {filteredLogs.length === 0 && (
-                <tr>
-                  <td colSpan="5" className="px-6 py-8 text-center text-slate-500">
-                    {filter === 'today' ? "No audit logs recorded for today" : "No audit logs recorded"}
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+            ))}
+            {filteredLogs.length === 0 && (
+              <tr>
+                <td colSpan="5" className="px-6 py-8 text-center text-slate-500">
+                  {filter === 'today' ? "No audit logs recorded for today" : "No audit logs recorded"}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </ResponsiveTable>
     </div>
   );
 };

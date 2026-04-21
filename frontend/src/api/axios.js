@@ -53,6 +53,16 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
+
+    // Global error notification for server errors
+    if (error.response?.status >= 500) {
+      const { toast } = await import('react-hot-toast');
+      toast.error('Server error. Please try again later.');
+    } else if (error.code === 'ECONNABORTED' || !error.response) {
+      const { toast } = await import('react-hot-toast');
+      toast.error('Network error. Check your connection.');
+    }
+
     return Promise.reject(error);
   }
 );
