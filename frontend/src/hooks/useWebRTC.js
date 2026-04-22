@@ -105,7 +105,8 @@ const useWebRTC = () => {
             setIsSharing(true);
 
             // 4. WebSocket Signaling
-            const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/monitoring/${rid}/`;
+            const wsBase = import.meta.env.VITE_WS_URL || (window.location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + window.location.host;
+            const wsUrl = `${wsBase}/ws/monitoring/${rid}/`;
             const ws = new WebSocket(wsUrl);
             wsRef.current = ws;
 
