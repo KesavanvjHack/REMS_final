@@ -403,10 +403,10 @@ const HolidayManagement = () => {
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="text-xs text-slate-400 uppercase bg-slate-900/50 border-b border-slate-700">
               <tr>
-                <th className="px-6 py-4 font-semibold">Date</th>
+                <th className="px-6 py-4 font-semibold w-32">Date</th>
                 <th className="px-6 py-4 font-semibold">Holiday Name</th>
-                <th className="px-6 py-4 font-semibold">Type</th>
-                <th className="px-6 py-4 text-right font-semibold">Actions</th>
+                <th className="px-6 py-4 font-semibold w-24">Type</th>
+                <th className="px-6 py-4 text-right font-semibold w-20">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/50">
@@ -421,13 +421,15 @@ const HolidayManagement = () => {
               ) : (
                 holidays.map((h) => (
                   <tr key={h.id} className="hover:bg-slate-700/20 transition-colors">
-                    <td className="px-6 py-4 font-medium text-slate-200">{format(new Date(h.date), 'MMM dd, yyyy')}</td>
-                    <td className="px-6 py-4">{h.name}</td>
+                    <td className="px-6 py-4 font-medium text-slate-200 whitespace-nowrap">
+                        {format(new Date(h.date), 'MMM dd, yyyy')}
+                    </td>
+                    <td className="px-6 py-4 font-medium text-slate-100">{h.name}</td>
                     <td className="px-6 py-4">
                       {h.is_optional ? (
-                        <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 text-xs border border-amber-500/20">Optional</span>
+                        <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 text-[10px] font-bold uppercase border border-amber-500/20">Optional</span>
                       ) : (
-                        <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-400 text-xs border border-emerald-500/20">Mandatory</span>
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold uppercase border border-emerald-500/20">Mandatory</span>
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">

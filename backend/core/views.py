@@ -704,7 +704,8 @@ class IdleView(APIView):
 
         if action_type == 'start':
             start_time = request.data.get('start_time')
-            idle_log, created = IdleService.start_idle(request.user, start_time)
+            reason = request.data.get('reason')
+            idle_log, created = IdleService.start_idle(request.user, start_time, reason)
             if idle_log is None:
                 return Response({'detail': 'No active work session.'}, status=400)
             return Response({
@@ -1094,6 +1095,18 @@ class AttendancePolicyViewSet(viewsets.ModelViewSet):
         if self.action in ('list', 'retrieve'):
             return [IsAuthenticated()] # Allow all authenticated to see policy, or at least Manager/Admin. We use IsAuthenticated since Employee might need it for info.
         return [IsAdmin()]
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        
+        # Notify all users if a new policy is created (and likely set to active)
+        NotificationService.notify_all_active_users(
+            self.request.user,
+            "New Attendance Policy",
+            f"Admin {self.request.user.full_name} has created a new global policy: {instance.name}",
+            "system"
+        )
+        StatusService.broadcast_policy_update()
 
     def perform_update(self, serializer):
         # Capture old values for comparison

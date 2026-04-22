@@ -4,7 +4,7 @@ import api from '../api/axios';
 import toast from 'react-hot-toast';
 import SessionWarningModal from '../components/SessionWarningModal';
 
-export const AuthContext = createContext();
+export const AuthContext = createContext({ user: null, loading: true, logout: () => {}, login: () => {} });
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -39,6 +39,7 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  const reconnectAttemptsRef = useRef(0);
   const connectWebSocket = useCallback((currentUser) => {
     if (wsRef.current || !currentUser) return;
     try {
@@ -46,6 +47,7 @@ export const AuthProvider = ({ children }) => {
       
       ws.onopen = () => {
         console.log('Status WebSocket Connected');
+        reconnectAttemptsRef.current = 0; // Reset on success
         if (currentUser) {
           ws.send(JSON.stringify({ type: 'presence', user_id: currentUser.id }));
           heartbeatRef.current = setInterval(() => {
@@ -53,6 +55,20 @@ export const AuthProvider = ({ children }) => {
               ws.send(JSON.stringify({ type: 'presence', user_id: currentUser.id }));
             }
           }, 30000);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('Status WebSocket Disconnected');
+        disconnectWebSocket();
+        
+        // Auto-reconnect with exponential backoff
+        if (reconnectAttemptsRef.current < 5) {
+            const delay = Math.pow(2, reconnectAttemptsRef.current) * 1000;
+            setTimeout(() => {
+                reconnectAttemptsRef.current += 1;
+                connectWebSocket(currentUser);
+            }, delay);
         }
       };
 
@@ -78,48 +94,53 @@ export const AuthProvider = ({ children }) => {
           window.dispatchEvent(new CustomEvent('rems_sync_required'));
           
           toast.success('System policy updated', { icon: '🔄' });
-        } else if (data.type === 'notification' && data.recipient_id === currentUser.id) {
-          setNotifications((prev) => {
-            if (prev.some(n => n.id === data.notification_id)) return prev;
-            const newNotif = {
-              id: data.notification_id,
-              title: data.title,
-              message: data.message,
-              type: data.notif_type,
-              sender_name: data.sender_name,
-              is_read: false,
-              created_at: new Date().toISOString()
-            };
-            
-            toast.custom((t) => (
-              <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-slate-800 shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5 border border-slate-700`}>
-                <div className="flex-1 w-0 p-4">
-                  <div className="flex items-start">
-                    <div className="flex-shrink-0 pt-0.5">
-                      <div className={`w-2 h-2 rounded-full ${
-                        data.notif_type === 'status' ? 'bg-emerald-400' : 
-                        data.notif_type === 'system' ? 'bg-rose-400' : 'bg-indigo-400'
-                      }`} />
-                    </div>
-                    <div className="ml-3 flex-1">
-                      <p className="text-sm font-medium text-slate-100">{data.title}</p>
-                      <p className="mt-1 text-sm text-slate-400 whitespace-pre-line">{data.message}</p>
+        } else if (data.type === 'notification_alert') {
+          const currentUserId = String(currentUser?.id || '').toLowerCase();
+          const recipientId = String(data.recipient_id || '').toLowerCase();
+          
+          if (recipientId === currentUserId) {
+            setNotifications((prev) => {
+              if (prev.some(n => n.id === data.notification_id)) return prev;
+              const newNotif = {
+                id: data.notification_id,
+                title: data.title,
+                message: data.message,
+                type: data.notif_type,
+                sender_name: data.sender_name,
+                is_read: false,
+                created_at: new Date().toISOString()
+              };
+              
+              toast.custom((t) => (
+                <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-slate-800 shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5 border border-slate-700`}>
+                  <div className="flex-1 w-0 p-4">
+                    <div className="flex items-start">
+                      <div className="flex-shrink-0 pt-0.5">
+                        <div className={`w-2 h-2 rounded-full ${
+                          data.notif_type === 'status' ? 'bg-emerald-400' : 
+                          data.notif_type === 'system' ? 'bg-rose-400' : 'bg-indigo-400'
+                        }`} />
+                      </div>
+                      <div className="ml-3 flex-1">
+                        <p className="text-sm font-medium text-slate-100">{data.title}</p>
+                        <p className="mt-1 text-sm text-slate-400 whitespace-pre-line">{data.message}</p>
+                      </div>
                     </div>
                   </div>
+                  <div className="flex border-l border-slate-700">
+                    <button 
+                      onClick={() => toast.dismiss(t.id)}
+                      className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-indigo-400 hover:text-indigo-300 focus:outline-none"
+                    >
+                      Close
+                    </button>
+                  </div>
                 </div>
-                <div className="flex border-l border-slate-700">
-                  <button 
-                    onClick={() => toast.dismiss(t.id)}
-                    className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-indigo-400 hover:text-indigo-300 focus:outline-none"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            ), { duration: 6000, id: data.notification_id });
+              ), { duration: 8000, id: data.notification_id });
 
-            return [newNotif, ...prev];
-          });
+              return [newNotif, ...prev];
+            });
+          }
         }
       };
 
@@ -201,15 +222,10 @@ export const AuthProvider = ({ children }) => {
     const token = localStorage.getItem('access_token');
     if (token) {
       try {
-        const decoded = jwtDecode(token);
-        if (decoded.exp * 1000 < Date.now()) {
-          logout();
-        } else {
-          const res = await api.get('/auth/me/');
-          setUser(res.data);
-          fetchInitialStatuses(res.data.role);
-          connectWebSocket(res.data);
-        }
+        const res = await api.get('/auth/me/');
+        setUser(res.data);
+        fetchInitialStatuses(res.data.role);
+        connectWebSocket(res.data);
       } catch (error) {
         logout();
       }
@@ -243,16 +259,33 @@ export const AuthProvider = ({ children }) => {
   }, [showWarning]);
 
   // HANDLE GLOBAL STATUS TOGGLING (SILENT)
+  const isTogglingIdleRef = useRef(false);
   const handleIdleDetection = useCallback(async (action) => {
-    // Only proceed if not already in target state
+    // Only proceed if not already in target state or already toggling
+    if (isTogglingIdleRef.current) return;
     if (action === 'start' && status !== 'working') return;
     if (action === 'stop' && status !== 'idle') return;
 
+    // GUARD: Prevent resuming to 'Working' if screen sharing is missing (set by WorkSession.jsx)
+    if (action === 'stop' && window.rems_screen_missing) {
+        console.log('[GlobalTracking] Resume blocked: Screen share required');
+        return;
+    }
+
     try {
+      isTogglingIdleRef.current = true;
       const thresholdSeconds = getIdleThreshold();
       const nextStatus = action === 'start' ? 'idle' : 'working';
+      
       setStatus(nextStatus);
       window.dispatchEvent(new CustomEvent('statusChange', { detail: nextStatus }));
+
+      // Notify user of automatic status change
+      if (nextStatus === 'idle') {
+          toast('You are now Idle', { icon: '🌙', id: 'idle_status_change' });
+      } else {
+          toast.success('Resumed: Working', { id: 'idle_status_change' });
+      }
 
       const payload = { action };
       if (action === 'start') {
@@ -262,10 +295,19 @@ export const AuthProvider = ({ children }) => {
       }
 
       await api.post('/sessions/idle/', payload);
+      
+      // Sync local policy if we just resumed (to ensure latest thresholds)
+      if (action === 'stop') {
+          fetchInitialStatuses(user.role);
+      }
     } catch (err) {
       console.error('[GlobalTracking] Idle toggle failed', err);
+      // Revert status on failure if it was a manual-like toggle
+      // setStatus(action === 'start' ? 'working' : 'idle'); 
+    } finally {
+      isTogglingIdleRef.current = false;
     }
-  }, [status]);
+  }, [status, fetchInitialStatuses, user, getIdleThreshold]);
 
   useEffect(() => {
     checkUserStatus();

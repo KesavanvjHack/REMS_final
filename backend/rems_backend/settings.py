@@ -39,6 +39,8 @@ INSTALLED_APPS = [
     'django_filters',
     # Local
     'core',
+    'monitoring',
+    'channels',
 ]
 
 MIDDLEWARE = [
@@ -287,8 +289,8 @@ UNFOLD = {
 # ─── Django Channels ───────────────────────────────────────────────────────────
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer"
-    }
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    },
 }
 
 # ─── Email ─────────────────────────────────────────────────────────────────────

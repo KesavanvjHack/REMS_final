@@ -47,21 +47,25 @@ class NotificationService:
         ]
         if not notifications:
             return
-        created = Notification.objects.bulk_create(notifications)
-        channel_layer = get_channel_layer()
-        for notif in created:
-            async_to_sync(channel_layer.group_send)(
-                'status_updates',
-                {
-                    'type': 'notification_alert',
-                    'notification_id': str(notif.id),
-                    'recipient_id': str(notif.recipient.id),
-                    'title': notif.title,
-                    'message': notif.message,
-                    'notif_type': notif.type,
-                    'sender_name': sender.full_name
-                }
-            )
+        try:
+            created = Notification.objects.bulk_create(notifications)
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                for notif in created:
+                    async_to_sync(channel_layer.group_send)(
+                        'status_updates',
+                        {
+                            'type': 'notification_alert',
+                            'notification_id': str(notif.id),
+                            'recipient_id': str(notif.recipient.id),
+                            'title': notif.title,
+                            'message': notif.message,
+                            'notif_type': notif.type,
+                            'sender_name': sender.full_name
+                        }
+                    )
+        except Exception as e:
+            logger.error(f"Notification processing failed: {e}")
 
     @staticmethod
     def notify_based_on_role(user, title, message, notif_type='system', sender=None):
@@ -613,6 +617,13 @@ class WorkSessionService:
         open_session.end_time = stop_time
         open_session.save(update_fields=['end_time', 'updated_at'])
 
+        # SYNC: Also close any active Monitoring (Screen Share) session
+        try:
+            from monitoring.models import MonitoringSession
+            MonitoringSession.objects.filter(employee=user, is_active=True).update(is_active=False)
+        except ImportError:
+            pass # Monitoring app might not be installed or enabled
+
         AttendanceService.recalculate_status(attendance)
         StatusService.broadcast_status_change(user)
         
@@ -704,8 +715,10 @@ class IdleService:
 
     @staticmethod
     @transaction.atomic
-    def start_idle(user, start_time=None):
-        """Log idle start. Called by frontend after threshold inactivity."""
+    def start_idle(user, start_time=None, reason=None):
+        """
+        Mark user as idle.
+        """
         from .models import WorkSession, IdleLog, AttendancePolicy
         import datetime
 
@@ -731,7 +744,7 @@ class IdleService:
         if on_break:
             return None, False
 
-        existing_idle = open_session.idle_logs.filter(end_time__isnull=True).first()
+        existing_idle = open_session.idle_logs.select_for_update().filter(end_time__isnull=True).first()
         if existing_idle:
             return existing_idle, False
 
@@ -742,11 +755,22 @@ class IdleService:
             work_session=open_session,
             start_time=new_start,
         )
-        # Inform user clearly about the policy threshold triggered
-        threshold_msg = f"after {policy.idle_threshold_minutes} minutes" if policy else "after threshold"
-        NotificationService.notify_shift_event(
-            user, "Idle Detected", f"You are now Idle ({threshold_msg} of inactivity).", "status"
-        )
+        
+        # Determine the notification message
+        if reason == 'screen_disconnected':
+            title = "Screen Disconnected"
+            msg = f"{user.full_name} is now Idle (Screen share disconnected after refresh)."
+        else:
+            threshold_msg = f"after {policy.idle_threshold_minutes} minutes" if policy else "after threshold"
+            title = "Idle Detected"
+            msg = f"You are now Idle ({threshold_msg} of inactivity)."
+
+        # 1. Notify Employee, Manager, and Admins
+        NotificationService.notify_shift_event(user, title, msg, "status")
+        
+        # 2. Broadcast status change to Live Dashboards
+        StatusService.broadcast_status_change(user)
+
         return idle_log, True
 
     @staticmethod
@@ -764,7 +788,7 @@ class IdleService:
         if not open_session:
             return None, False
 
-        open_idle = open_session.idle_logs.filter(end_time__isnull=True).first()
+        open_idle = open_session.idle_logs.select_for_update().filter(end_time__isnull=True).first()
         if not open_idle:
             return None, False
 

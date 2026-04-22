@@ -4,7 +4,8 @@ from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 from channels.security.websocket import AllowedHostsOriginValidator
-from core.routing import websocket_urlpatterns
+from core.routing import websocket_urlpatterns as core_ws
+from monitoring.routing import websocket_urlpatterns as monitoring_ws
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'rems_backend.settings')
 
@@ -15,7 +16,7 @@ application = ProtocolTypeRouter({
     "websocket": AllowedHostsOriginValidator(
         AuthMiddlewareStack(
             URLRouter(
-                websocket_urlpatterns
+                core_ws + monitoring_ws
             )
         )
     ),

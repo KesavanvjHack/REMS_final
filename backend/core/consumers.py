@@ -70,7 +70,7 @@ class StatusConsumer(AsyncWebsocketConsumer):
 
     async def notification_alert(self, event):
         await self.send(text_data=json.dumps({
-            'type': 'notification',
+            'type': 'notification_alert',
             'notification_id': event['notification_id'],
             'recipient_id': event['recipient_id'],
             'title': event['title'],

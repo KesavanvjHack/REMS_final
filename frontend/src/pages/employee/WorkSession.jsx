@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { PlayIcon, StopIcon, PauseIcon, CameraIcon } from '@heroicons/react/24/solid';
 import { ClockIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import { AuthContext } from '../../context/AuthContext';
+import useWebRTC from '../../hooks/useWebRTC';
 
 const formatTime12h = (timeStr) => {
   if (!timeStr) return '';
@@ -15,6 +16,7 @@ const formatTime12h = (timeStr) => {
 
 const WorkSession = () => {
   const { policy, user, status, setStatus, sendJson } = useContext(AuthContext);
+  const { startSharing, stopSharing: stopWebRTC, isSharing, stream } = useWebRTC();
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(new Date());
   const [breakType, setBreakType] = useState('lunch');
@@ -88,7 +90,7 @@ const WorkSession = () => {
       const currentTime = new Date();
       setNow(currentTime); 
 
-      if (status === 'working') {
+      if (status === 'working' && stream) {
         setActiveTicks(prev => prev + 1);
       } else if (status === 'idle') {
         setIdleTicks(prev => prev + 1);
@@ -142,6 +144,30 @@ const WorkSession = () => {
       });
     }
   }, [now, policy, status, loading]);
+
+  // SYNC: Automatic Idle during Screen Disconnection
+  useEffect(() => {
+    if (loading || status === 'offline' || status === 'on_break') return;
+
+    // If working/idle but screen sharing is NOT active (e.g. after refresh)
+    // We force the backend to 'Idle' state to pause work hour calculation
+    if ((status === 'working' || status === 'idle') && !stream) {
+        window.rems_screen_missing = true;
+        api.post('/sessions/idle/', { 
+            action: 'start',
+            reason: 'screen_disconnected' 
+        }).catch(() => {});
+    } 
+    // Resume work automatically when stream is captured
+    else if (status === 'idle' && stream) {
+        window.rems_screen_missing = false;
+        api.post('/sessions/idle/', { action: 'stop' }).catch(() => {});
+    }
+
+    return () => {
+        window.rems_screen_missing = false;
+    };
+  }, [status, stream, loading]);
 
   // Auto-resume work when break time expires
   useEffect(() => {
@@ -209,6 +235,11 @@ const WorkSession = () => {
     try {
       setLoading(true);
 
+      if (action === 'start') {
+          // Trigger WebRTC screen share first
+          await startSharing();
+      }
+
       // Proceed with API call
       const response = await api.post(`/sessions/${endpoint}/`, { action });
       
@@ -220,6 +251,7 @@ const WorkSession = () => {
           
           if (endpoint === 'work' && action === 'stop') {
              localStorage.removeItem('rems_active_break');
+             await stopWebRTC();
           }
           toast.success(`Session ${action === 'start' ? 'started' : 'ended'} successfully`);
       }
@@ -374,6 +406,27 @@ const WorkSession = () => {
 
           {(status === 'working' || status === 'idle') && (
             <>
+              {/* Stream Disconnection Warning (occurs on refresh or error) */}
+              {!stream && (
+                <div className="sm:col-span-2 p-6 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex flex-col items-center gap-4 animate-pulse">
+                  <div className="flex items-center gap-3 text-rose-400">
+                    <CameraIcon className="h-6 w-6" />
+                    <span className="font-bold">Screen sharing required</span>
+                  </div>
+                  <p className="text-sm text-slate-400 text-center">
+                    You are currently in a {status} session, but screen sharing is not active. 
+                    Please share your entire screen to continue.
+                  </p>
+                  <button
+                    onClick={startSharing}
+                    className="w-full flex items-center justify-center gap-3 bg-rose-600 hover:bg-rose-500 text-white py-3 px-6 rounded-xl font-bold transition-all shadow-lg"
+                  >
+                    <PlayIcon className="h-5 w-5" />
+                    {isSharing ? 'Resume Screen Sharing' : 'Start Screen Sharing'}
+                  </button>
+                </div>
+              )}
+
               <div className="flex flex-col gap-3">
                 <select 
                   value={breakType}

@@ -7,7 +7,7 @@ import {
   CheckBadgeIcon, ClockIcon, BuildingOfficeIcon,
   RectangleGroupIcon, Cog8ToothIcon, ClipboardDocumentCheckIcon,
   ClipboardDocumentListIcon, FolderIcon, QueueListIcon, CurrencyDollarIcon,
-  XMarkIcon
+  XMarkIcon, SignalIcon
 } from '@heroicons/react/24/outline';
 
 const Sidebar = ({ isOpen, onClose }) => {
@@ -24,6 +24,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   if (!user) return null;
 
   const adminLinks = [
+    { name: '🔴 Live Monitor', to: '/live-monitor', icon: SignalIcon },
     { name: 'Dashboard (Company KPIs)', to: '/admin', icon: HomeIcon },
     { name: 'Organization', to: '/admin/org', icon: BuildingOfficeIcon },
     { name: 'User Management', to: '/admin/users', icon: UsersIcon },
@@ -38,6 +39,7 @@ const Sidebar = ({ isOpen, onClose }) => {
   ];
 
   const managerLinks = [
+    { name: '🔴 Live Monitor', to: '/live-monitor', icon: SignalIcon },
     { name: 'Team Dashboard', to: '/manager', icon: HomeIcon },
     { name: 'My Team', to: '/manager/team-attendance', icon: UsersIcon },
     { name: 'My Timesheet', to: '/manager/work', icon: ClockIcon },
@@ -88,7 +90,7 @@ const Sidebar = ({ isOpen, onClose }) => {
             to={link.to}
             end={link.to === '/admin' || link.to === '/manager' || link.to === '/employee'}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 relative group ${
+              `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 relative group hardware-accelerated active:scale-[0.98] ${
                 isActive
                   ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.1)]'
                   : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-200'

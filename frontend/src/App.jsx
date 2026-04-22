@@ -4,6 +4,7 @@ import { AuthContext } from './context/AuthContext';
 import { Toaster, ToastBar, toast } from 'react-hot-toast';
 import { XMarkIcon } from '@heroicons/react/24/solid';
 import { AuthProvider } from './context/AuthContext';
+import { ScreenShareProvider } from './context/ScreenShareContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
 // Layouts & Auth
@@ -22,6 +23,7 @@ const TaskProjectHub = lazy(() => import('./pages/admin/TaskProjectHub'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 const OrganizationManagement = lazy(() => import('./pages/admin/OrganizationManagement'));
 const AttendanceHub = lazy(() => import('./pages/admin/AttendanceHub'));
+const LiveMonitorPage = lazy(() => import('./components/admin/LiveMonitorPage'));
 
 // Manager Pages
 const ManagerDashboard = lazy(() => import('./pages/manager/Dashboard'));
@@ -58,7 +60,9 @@ const GlobalLoading = ({ message = "Resuming Workplace Session" }) => (
 );
 
 const RootRedirect = () => {
-  const { user, loading } = useContext(AuthContext);
+  const auth = useContext(AuthContext);
+  const user = auth?.user;
+  const loading = auth?.loading;
   
   if (loading) return <GlobalLoading message="Establishing Workspace" />;
 
@@ -81,26 +85,8 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <Toaster position="top-right">
-          {(t) => (
-            <ToastBar toast={t}>
-              {({ icon, message }) => (
-                <>
-                  {icon}
-                  {message}
-                  {t.type !== 'loading' && (
-                    <button
-                      onClick={() => toast.dismiss(t.id)}
-                      className="ml-2 hover:bg-slate-700/50 p-1 rounded-full text-slate-400 hover:text-white transition-colors flex-shrink-0"
-                    >
-                      <XMarkIcon className="h-4 w-4" />
-                    </button>
-                  )}
-                </>
-              )}
-            </ToastBar>
-          )}
-        </Toaster>
+        <ScreenShareProvider>
+        <Toaster position="top-right" />
         <Suspense fallback={<GlobalLoading />}>
           <Routes>
             <Route path="/" element={<RootRedirect />} />
@@ -148,10 +134,16 @@ function App() {
               <Route path="/employee/expenses" element={<Expenses />} />
             </Route>
             
+            {/* Live Monitoring Route */}
+            <Route element={<ProtectedRoute allowedRoles={['admin', 'manager']} />}>
+              <Route path="/live-monitor" element={<LiveMonitorPage />} />
+            </Route>
+            
             {/* 404 Fallback */}
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
+        </ScreenShareProvider>
       </AuthProvider>
     </Router>
   );

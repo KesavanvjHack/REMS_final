@@ -1,8 +1,8 @@
 import React from 'react';
 
-const ResponsiveTable = ({ children, title }) => {
+const ResponsiveTable = ({ children, title, className = "" }) => {
   return (
-    <div className="w-full min-w-0 bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl">
+    <div className={`w-full min-w-0 bg-slate-800/50 border border-slate-700 rounded-2xl overflow-hidden shadow-xl ${className}`}>
       {title && (
         <div className="px-6 py-4 border-b border-slate-700 bg-slate-900/30">
           <h3 className="text-lg font-semibold text-white tracking-tight">{title}</h3>

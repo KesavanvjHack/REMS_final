@@ -4,7 +4,9 @@ import { AuthContext } from '../context/AuthContext';
 import DashboardLayout from './DashboardLayout';
 
 const ProtectedRoute = ({ allowedRoles }) => {
-  const { user, loading } = useContext(AuthContext);
+  const auth = useContext(AuthContext);
+  const user = auth?.user;
+  const loading = auth?.loading;
 
   if (loading) return (
     <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center relative overflow-hidden">
