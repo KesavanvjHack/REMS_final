@@ -499,26 +499,40 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
         
         att_map = {a.user_id: a for a in attendances}
         
-        # 3. Get any leave requests spanning today
-        leaves = LeaveRequest.objects.filter(employee__in=users, from_date__lte=today, to_date__gte=today)
-        leave_map = {leave.employee_id: leave for leave in leaves}
+        # 3. Get any valid leave requests spanning today (Approved or Pending)
+        leaves = LeaveRequest.objects.filter(
+            employee__in=users, 
+            from_date__lte=today, 
+            to_date__gte=today
+        ).exclude(status__in=[LeaveRequest.STATUS_REJECTED, LeaveRequest.STATUS_CANCELLED])
+        
+        # Map leaves: Prioritize Approved over Pending
+        leave_map = {}
+        for l in leaves:
+            if l.employee_id not in leave_map or l.status == LeaveRequest.STATUS_APPROVED:
+                leave_map[l.employee_id] = l
         
         result = []
         for u in users:
             att = att_map.get(u.id)
             leave = leave_map.get(u.id)
             
+            # Case 1: Active/Approved/Pending Leave Record
             if leave:
+                # If it's approved, the status is 'on_leave'
+                # If it's pending, we still want to show it in the leaves table as a justification for absence
+                status = 'on_leave' if leave.status == LeaveRequest.STATUS_APPROVED else 'pending_leave'
                 result.append({
                     'id': f"leave_{u.id}_{today}",
                     'user_name': u.full_name,
                     'user_email': u.email,
                     'user_role': u.role,
-                    'status': 'on_leave',
-                    'leave_type': leave.get_leave_type_display() if leave else "Leave",
-                    'reason': leave.reason or leave.get_leave_type_display()
+                    'status': status,
+                    'leave_type': leave.get_leave_type_display(),
+                    'reason': leave.reason or f"Request for {leave.get_leave_type_display()}"
                 })
             elif att:
+                # Case 2: Attendance record exists
                 if att.status == Attendance.STATUS_ON_LEAVE:
                     result.append({
                         'id': str(att.id),
@@ -527,27 +541,33 @@ class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
                         'user_role': u.role,
                         'status': att.status,
                         'leave_type': 'Leave',
-                        'reason': att.manager_remark or att.flag_reason or 'No reason provided'
+                        'reason': att.manager_remark or 'Approved Leave'
                     })
                 elif att.status == Attendance.STATUS_ABSENT:
+                    # Explicit unannounced absence
                     result.append({
                         'id': str(att.id),
                         'user_name': u.full_name,
                         'user_email': u.email,
                         'user_role': u.role,
                         'status': att.status,
-                        'leave_type': '-',
-                        'reason': '-'
+                        'leave_type': 'None',
+                        'reason': 'Unannounced Absence'
                     })
+                else:
+                    # They are working or present, usually don't show in "Leaves" table 
+                    # but if they are here, we might skip or show as 'present'
+                    pass 
             else:
+                # Case 3: No record at all (Implicit Absent)
                 result.append({
                     'id': f"dummy_{u.id}_{today}",
                     'user_name': u.full_name,
                     'user_email': u.email,
                     'user_role': u.role,
                     'status': 'absent',
-                    'leave_type': '-',
-                    'reason': '-'
+                    'leave_type': 'None',
+                    'reason': 'No Login / Not Checked In'
                 })
                 
         return Response(result)
@@ -627,17 +647,11 @@ class WorkSessionView(APIView):
                     'session': WorkSessionSerializer(session).data,
                 })
             except ValueError as e:
-                error_msg = str(e)
-                # Only return known business-logic errors to the user as 400
-                known_errors = ['Shift has not started', 'already checked out', 'restricted']
-                if any(phrase in error_msg for phrase in known_errors):
-                    return Response({'error': error_msg}, status=400)
-                # Unknown ValueError — return as 500 with actual detail for debugging
-                return Response({'error': f'System Error: {error_msg}'}, status=500)
+                return Response({'error': str(e)}, status=400)
             except Exception as e:
                 import logging
                 logging.getLogger(__name__).exception('Critical error in start_session')
-                return Response({'error': f'Unexpected System Error: {str(e)}'}, status=500)
+                return Response({'error': 'Unexpected System Error. Please contact support.'}, status=500)
         elif action == 'stop':
             try:
                 session, stopped = WorkSessionService.stop_session(request.user)
@@ -672,23 +686,29 @@ class BreakSessionView(APIView):
         if action == 'start':
             try:
                 break_session, created = BreakSessionService.start_break(request.user)
+                return Response({
+                    'status': 'started' if created else 'already_on_break',
+                    'break_session': BreakSessionSerializer(break_session).data,
+                })
             except ValueError as e:
-                return Response({'detail': str(e)}, status=400)
-
-            return Response({
-                'status': 'started' if created else 'already_on_break',
-                'break_session': BreakSessionSerializer(break_session).data,
-            })
+                return Response({'error': str(e)}, status=400)
+            except Exception as e:
+                return Response({'error': 'System error starting break'}, status=500)
         elif action == 'stop':
-            break_session, stopped = BreakSessionService.stop_break(request.user)
-            if not stopped:
-                return Response({'detail': 'No active break to stop.'}, status=400)
-            return Response({
-                'status': 'stopped',
-                'break_session': BreakSessionSerializer(break_session).data,
-            })
+            try:
+                break_session, stopped = BreakSessionService.stop_break(request.user)
+                if not stopped:
+                    return Response({'error': 'No active break to stop.'}, status=400)
+                return Response({
+                    'status': 'stopped',
+                    'break_session': BreakSessionSerializer(break_session).data,
+                })
+            except ValueError as e:
+                return Response({'error': str(e)}, status=400)
+            except Exception as e:
+                return Response({'error': 'System error stopping break'}, status=500)
         else:
-            return Response({'detail': 'action must be "start" or "stop".'}, status=400)
+            return Response({'error': 'action must be "start" or "stop".'}, status=400)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -703,25 +723,35 @@ class IdleView(APIView):
         action_type = request.data.get('action')
 
         if action_type == 'start':
-            start_time = request.data.get('start_time')
-            reason = request.data.get('reason')
-            idle_log, created = IdleService.start_idle(request.user, start_time, reason)
-            if idle_log is None:
-                return Response({'detail': 'No active work session.'}, status=400)
-            return Response({
-                'status': 'idle_started' if created else 'already_idle',
-                'idle_log': IdleLogSerializer(idle_log).data,
-            })
+            try:
+                start_time = request.data.get('start_time')
+                reason = request.data.get('reason')
+                idle_log, created = IdleService.start_idle(request.user, start_time, reason)
+                if idle_log is None:
+                    return Response({'error': 'No active work session found.'}, status=400)
+                return Response({
+                    'status': 'idle_started' if created else 'already_idle',
+                    'idle_log': IdleLogSerializer(idle_log).data,
+                })
+            except ValueError as e:
+                return Response({'error': str(e)}, status=400)
+            except Exception as e:
+                return Response({'error': 'System error starting idle log'}, status=500)
         elif action_type == 'stop':
-            idle_log, stopped = IdleService.stop_idle(request.user)
-            if not stopped:
-                return Response({'detail': 'No active idle period.'}, status=400)
-            return Response({
-                'status': 'resumed',
-                'idle_log': IdleLogSerializer(idle_log).data,
-            })
+            try:
+                idle_log, stopped = IdleService.stop_idle(request.user)
+                if not stopped:
+                    return Response({'error': 'No active idle period found.'}, status=400)
+                return Response({
+                    'status': 'resumed',
+                    'idle_log': IdleLogSerializer(idle_log).data,
+                })
+            except ValueError as e:
+                return Response({'error': str(e)}, status=400)
+            except Exception as e:
+                return Response({'error': 'System error stopping idle log'}, status=500)
         else:
-            return Response({'detail': 'action must be "start" or "stop".'}, status=400)
+            return Response({'error': 'action must be "start" or "stop".'}, status=400)
 
 
 class SyncSessionView(APIView):

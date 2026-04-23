@@ -48,10 +48,17 @@ class NotificationService:
         if not notifications:
             return
         try:
-            created = Notification.objects.bulk_create(notifications)
+            # We don't use bulk_create here because we need IDs for the WebSocket broadcast
+            # and bulk_create support for IDs varies by DB. Individual save() is safer for 
+            # real-time notification dispatch to ensure every message is valid.
+            created_notifications = []
+            for notif in notifications:
+                notif.save()
+                created_notifications.append(notif)
+                
             channel_layer = get_channel_layer()
             if channel_layer:
-                for notif in created:
+                for notif in created_notifications:
                     async_to_sync(channel_layer.group_send)(
                         'status_updates',
                         {
@@ -518,10 +525,23 @@ class WorkSessionService:
         policy = AttendancePolicy.objects.filter(is_active=True).first()
         now_local = timezone.localtime(timezone.now())
         
-        # 1. Enforce shift start time constraint
-        if policy:
-            if now_local.time() < policy.shift_start_time:
-                raise ValueError(f"Shift has not started yet. You can start work after {policy.shift_start_time.strftime('%I:%M %p')}.")
+        # 1. Enforce shift start time constraint (Night Shift Aware)
+        if policy and user.role != 'admin':
+            s_time = policy.shift_start_time
+            e_time = policy.shift_end_time
+            is_night_shift = e_time <= s_time
+            
+            curr_time = now_local.time()
+            is_inside = False
+            
+            if not is_night_shift:
+                is_inside = s_time <= curr_time <= e_time
+            else:
+                # Night shift: Starts today, ends tomorrow
+                is_inside = curr_time >= s_time or curr_time <= e_time
+                
+            if not is_inside and curr_time < s_time:
+                 raise ValueError(f"Shift has not started yet. You can start work after {s_time.strftime('%I:%M %p')}.")
 
         attendance, _ = AttendanceService.get_or_create_today(user)
         # Sequence lock on parent attendance to prevent double-click creation races
@@ -591,13 +611,19 @@ class WorkSessionService:
                 # Use the date of the attendance record, not necessarily 'today'
                 # to handle sessions that were left open from previous days.
                 session_date = attendance.date
-                shift_end_dt = timezone.make_aware(datetime.datetime.combine(session_date, policy.shift_end_time))
+                tz = timezone.get_current_timezone()
+                shift_start_dt = timezone.make_aware(datetime.datetime.combine(session_date, policy.shift_start_time), tz)
+                shift_end_dt = timezone.make_aware(datetime.datetime.combine(session_date, policy.shift_end_time), tz)
+                
+                # If end time is before start time, it belongs to the next morning
+                if policy.shift_end_time <= policy.shift_start_time:
+                    shift_end_dt += datetime.timedelta(days=1)
                 
                 if stop_time > shift_end_dt:
                     stop_time = shift_end_dt
-                    is_auto = True # Mark as auto if we capped it
+                    is_auto = True 
 
-        # Ensure stop_time is NOT before start_time to prevent negative duration
+        # Ensure stop_time is NOT before start_time
         if stop_time < open_session.start_time:
             stop_time = open_session.start_time
             is_auto = True
@@ -1013,14 +1039,33 @@ class ReportService:
             else:
                 final_absent += missing_today
 
+        # 1. Total User-Days Expected (for accurate rate calculation)
+        from .models import Holiday
+        num_users = actual_user_count
+        
+        # Calculate number of non-holiday week days in range
+        total_days = (effective_to_date - (from_date if from_date else effective_to_date - timedelta(days=30))).days + 1
+        expected_attendances = num_users * total_days
+        
+        # Adjust for holidays in the range
+        holidays_in_range = Holiday.objects.filter(date__range=[from_date or (effective_to_date - timedelta(days=30)), effective_to_date]).count()
+        if holidays_in_range > 0:
+            expected_attendances -= (num_users * holidays_in_range)
+
+        attendance_rate = 0
+        if expected_attendances > 0:
+            attendance_rate = round(((present + (half_day * 0.5)) / expected_attendances) * 100, 1)
+            attendance_rate = min(100.0, attendance_rate) # Cap at 100%
+
         absent = final_absent
         avg_work = qs.aggregate(avg=Sum('total_work_seconds'))['avg'] or 0
         avg_idle = qs.aggregate(avg=Sum('total_idle_seconds'))['avg'] or 0
 
         total_score = 0
         scored_days = 0
-        if total_records < 200:
+        if total_records < 500: # Increased limit
             for d_att in qs.select_related('user'):
+                from .services import ProductivityScoringService
                 total_score += ProductivityScoringService.calculate_score(d_att.user, d_att.date)
                 scored_days += 1
         avg_productivity_score = round(total_score / scored_days) if scored_days > 0 else 0
@@ -1032,7 +1077,7 @@ class ReportService:
             'absent': absent,
             'calculating': calculating,
             'on_leave': on_leave,
-            'attendance_rate': round(present / actual_user_count * 100, 1) if actual_user_count > 0 else 0,
+            'attendance_rate': attendance_rate,
             'avg_work_hours': round(avg_work / 3600, 2) if total_records > 0 else 0,
             'avg_idle_hours': round(avg_idle / 3600, 2) if total_records > 0 else 0,
             'productivity_score': avg_productivity_score,

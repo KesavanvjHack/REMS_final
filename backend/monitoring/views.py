@@ -16,24 +16,26 @@ class ShiftCheckView(APIView):
         target_user_id = employee_id or request.user.id
         user = get_object_or_404(User, id=target_user_id)
         
-        # Determine shift from AttendancePolicy or Shift model
-        # Prioritizing AttendancePolicy for global settings if assigned to department
         policy = AttendancePolicy.objects.filter(is_active=True).first()
         if user.department and user.department.policies.filter(is_active=True).exists():
             policy = user.department.policies.filter(is_active=True).first()
         
-        shift_start = policy.shift_start_time if policy else time(9, 0)
-        shift_end = policy.shift_end_time if policy else time(18, 0)
+        s_time = policy.shift_start_time if policy else time(9, 0)
+        e_time = policy.shift_end_time if policy else time(18, 0)
         
         now = timezone.localtime(timezone.now())
         current_time = now.time()
         
-        within_shift = shift_start <= current_time <= shift_end
+        # Robust Overnight Check
+        if s_time <= e_time:
+            within_shift = s_time <= current_time <= e_time
+        else:
+            within_shift = current_time >= s_time or current_time <= e_time
         
         return Response({
             'within_shift': within_shift,
-            'shift_start': shift_start.strftime('%H:%M'),
-            'shift_end': shift_end.strftime('%H:%M'),
+            'shift_start': s_time.strftime('%H:%M'),
+            'shift_end': e_time.strftime('%H:%M'),
             'current_time': current_time.strftime('%H:%M')
         })
 
@@ -46,7 +48,6 @@ class MonitoringSessionViewSet(viewsets.ModelViewSet):
     def start_monitoring(self, request):
         user = request.user
         
-        # Logic to calculate shift window for the model
         policy = AttendancePolicy.objects.filter(is_active=True).first()
         if user.department and user.department.policies.filter(is_active=True).exists():
             policy = user.department.policies.filter(is_active=True).first()
@@ -55,8 +56,13 @@ class MonitoringSessionViewSet(viewsets.ModelViewSet):
         s_time = policy.shift_start_time if policy else time(9, 0)
         e_time = policy.shift_end_time if policy else time(18, 0)
         
-        shift_start = timezone.make_aware(datetime.combine(today, s_time))
-        shift_end = timezone.make_aware(datetime.combine(today, e_time))
+        tz = timezone.get_current_timezone()
+        shift_start = timezone.make_aware(datetime.combine(today, s_time), tz)
+        shift_end = timezone.make_aware(datetime.combine(today, e_time), tz)
+        
+        # Fix: Night shift adjustment for session window
+        if e_time <= s_time:
+            shift_end += timezone.timedelta(days=1)
 
         # Close any existing active sessions for this user
         MonitoringSession.objects.filter(employee=user, is_active=True).update(is_active=False)

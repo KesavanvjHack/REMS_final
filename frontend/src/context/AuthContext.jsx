@@ -13,7 +13,10 @@ export const AuthProvider = ({ children }) => {
   const [idleThreshold, setIdleThreshold] = useState(15); // Default 15 mins
   const [policy, setPolicy] = useState(null);
   const [status, setStatus] = useState('offline');
-  const [lastActivity, setLastActivity] = useState(Date.now());
+  const [lastActivity, setLastActivity] = useState(() => {
+    const stored = localStorage.getItem('rems_last_activity');
+    return stored ? parseInt(stored, 10) : Date.now();
+  });
   const [showWarning, setShowWarning] = useState(false);
   const [warningTimeLeft, setWarningTimeLeft] = useState('');
   const [isWithinShift, setIsWithinShift] = useState(true);
@@ -22,7 +25,7 @@ export const AuthProvider = ({ children }) => {
   
   const wsRef = useRef(null);
   const heartbeatRef = useRef(null);
-  const lastActivityRef = useRef(Date.now());
+  const lastActivityRef = useRef(lastActivity);
   // Real-time Idle Logic: Derived from the Attendance Policy (minutes -> seconds)
   const getIdleThreshold = useCallback(() => {
     return (policy?.idle_threshold_minutes || 15) * 60;
@@ -40,20 +43,78 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const reconnectAttemptsRef = useRef(0);
+  const handleIncomingNotification = useCallback((data, currentUser) => {
+    const currentUserId = String(currentUser?.id || '').toLowerCase();
+    const recipientId = String(data.recipient_id || '').toLowerCase();
+    
+    if (recipientId === currentUserId) {
+      setNotifications((prev) => {
+        if (prev.some(n => n.id === data.notification_id)) return prev;
+        const newNotif = {
+          id: data.notification_id,
+          title: data.title,
+          message: data.message,
+          type: data.notif_type,
+          sender_name: data.sender_name,
+          is_read: false,
+          created_at: new Date().toISOString()
+        };
+        
+        toast.custom((t) => (
+          <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-slate-800 shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5 border border-slate-700`}>
+            <div className="flex-1 w-0 p-4">
+              <div className="flex items-start">
+                <div className="flex-shrink-0 pt-0.5">
+                  <div className={`w-2 h-2 rounded-full ${
+                    data.notif_type === 'status' ? 'bg-emerald-400' : 
+                    data.notif_type === 'system' ? 'bg-rose-400' : 'bg-indigo-400'
+                  }`} />
+                </div>
+                <div className="ml-3 flex-1">
+                  <p className="text-sm font-medium text-slate-100">{data.title}</p>
+                  <p className="mt-1 text-sm text-slate-400 whitespace-pre-line">{data.message}</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex border-l border-slate-700">
+              <button 
+                onClick={() => toast.dismiss(t.id)}
+                className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-indigo-400 hover:text-indigo-300 focus:outline-none"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        ), { duration: 8000, id: data.notification_id });
+
+        return [newNotif, ...prev];
+      });
+    }
+  }, []);
+
   const connectWebSocket = useCallback((currentUser) => {
     if (wsRef.current || !currentUser) return;
+    
+    // Safety check to clear any stale heartbeats before new connection
+    if (heartbeatRef.current) {
+        clearInterval(heartbeatRef.current);
+        heartbeatRef.current = null;
+    }
+
     try {
-      const wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
-      const ws = new WebSocket(`${wsUrl}/ws/status/`);
+      const ws = new WebSocket('ws://localhost:8000/ws/status/');
+      wsRef.current = ws;
       
       ws.onopen = () => {
         console.log('Status WebSocket Connected');
         reconnectAttemptsRef.current = 0; // Reset on success
-        if (currentUser) {
+        
+        if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: 'presence', user_id: currentUser.id }));
+          
           heartbeatRef.current = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ type: 'presence', user_id: currentUser.id }));
+            if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+              wsRef.current.send(JSON.stringify({ type: 'presence', user_id: currentUser.id }));
             }
           }, 30000);
         }
@@ -61,7 +122,11 @@ export const AuthProvider = ({ children }) => {
 
       ws.onclose = () => {
         console.log('Status WebSocket Disconnected');
-        disconnectWebSocket();
+        wsRef.current = null;
+        if (heartbeatRef.current) {
+          clearInterval(heartbeatRef.current);
+          heartbeatRef.current = null;
+        }
         
         // Auto-reconnect with exponential backoff
         if (reconnectAttemptsRef.current < 5) {
@@ -73,81 +138,35 @@ export const AuthProvider = ({ children }) => {
         }
       };
 
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        // Debug Logging
-        if (data.type !== 'presence_update') {
-            console.log('[WebSocket] MSG:', data.type, data);
-        }
-
-        if (data.type === 'status_update') {
-          setLiveStatuses(prev => ({
-            ...prev,
-            [data.user_id]: data.status
-          }));
-        } else if (data.type === 'policy_update') {
-          console.log('Policy update received - triggering global sync');
-          // Re-fetch everything to reflect new shift hours or session resets
-          fetchInitialStatuses(currentUser.role);
-          
-          // Emit a custom event so specific pages (like WorkSession) can re-fetch their local status
-          window.dispatchEvent(new CustomEvent('rems_sync_required'));
-          
-          toast.success('System policy updated', { icon: '🔄' });
-        } else if (data.type === 'notification_alert') {
-          const currentUserId = String(currentUser?.id || '').toLowerCase();
-          const recipientId = String(data.recipient_id || '').toLowerCase();
-          
-          if (recipientId === currentUserId) {
-            setNotifications((prev) => {
-              if (prev.some(n => n.id === data.notification_id)) return prev;
-              const newNotif = {
-                id: data.notification_id,
-                title: data.title,
-                message: data.message,
-                type: data.notif_type,
-                sender_name: data.sender_name,
-                is_read: false,
-                created_at: new Date().toISOString()
-              };
-              
-              toast.custom((t) => (
-                <div className={`${t.visible ? 'animate-enter' : 'animate-leave'} max-w-md w-full bg-slate-800 shadow-lg rounded-lg pointer-events-auto flex ring-1 ring-black ring-opacity-5 border border-slate-700`}>
-                  <div className="flex-1 w-0 p-4">
-                    <div className="flex items-start">
-                      <div className="flex-shrink-0 pt-0.5">
-                        <div className={`w-2 h-2 rounded-full ${
-                          data.notif_type === 'status' ? 'bg-emerald-400' : 
-                          data.notif_type === 'system' ? 'bg-rose-400' : 'bg-indigo-400'
-                        }`} />
-                      </div>
-                      <div className="ml-3 flex-1">
-                        <p className="text-sm font-medium text-slate-100">{data.title}</p>
-                        <p className="mt-1 text-sm text-slate-400 whitespace-pre-line">{data.message}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex border-l border-slate-700">
-                    <button 
-                      onClick={() => toast.dismiss(t.id)}
-                      className="w-full border border-transparent rounded-none rounded-r-lg p-4 flex items-center justify-center text-sm font-medium text-indigo-400 hover:text-indigo-300 focus:outline-none"
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-              ), { duration: 8000, id: data.notification_id });
-
-              return [newNotif, ...prev];
-            });
-          }
-        }
+      ws.onerror = (err) => {
+        console.error('WebSocket Error:', err);
+        // Error will trigger onclose
       };
 
-      ws.onclose = () => {
-        wsRef.current = null;
-        console.log('Status WebSocket Disconnected');
+      ws.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            
+            if (data.type !== 'presence_update' && data.type !== 'status_update') {
+                console.log('[WebSocket] MSG:', data.type, data);
+            }
+
+            if (data.type === 'status_update') {
+              setLiveStatuses(prev => ({
+                ...prev,
+                [data.user_id]: data.status
+              }));
+            } else if (data.type === 'policy_update') {
+              fetchInitialStatuses(currentUser.role);
+              window.dispatchEvent(new CustomEvent('rems_sync_required'));
+              toast.success('System policy updated', { icon: '🔄' });
+            } else if (data.type === 'notification_alert') {
+              // ... notification logic handled below
+              handleIncomingNotification(data, currentUser);
+            }
+        } catch (err) {
+            console.error('Failed to parse WS message:', err);
+        }
       };
       
       wsRef.current = ws;
@@ -254,8 +273,10 @@ export const AuthProvider = ({ children }) => {
   }, [fetchInitialStatuses, connectWebSocket]);
 
   const refreshActivity = useCallback(() => {
-    lastActivityRef.current = Date.now();
-    setLastActivity(Date.now());
+    const now = Date.now();
+    lastActivityRef.current = now;
+    setLastActivity(now);
+    localStorage.setItem('rems_last_activity', String(now));
     if (showWarning) setShowWarning(false);
   }, [showWarning]);
 
@@ -313,11 +334,14 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     checkUserStatus();
 
-    // GLOBAL ACTIVITY LISTENERS
-    window.addEventListener('mousemove', refreshActivity);
-    window.addEventListener('keydown', refreshActivity);
-    window.addEventListener('mousedown', refreshActivity);
-    window.addEventListener('scroll', refreshActivity);
+    const handleStorageChange = (e) => {
+        if (e.key === 'rems_last_activity' && e.newValue) {
+            const time = parseInt(e.newValue, 10);
+            lastActivityRef.current = time;
+            setLastActivity(time);
+        }
+    };
+    window.addEventListener('storage', handleStorageChange);
 
     return () => {
         disconnectWebSocket();
@@ -325,6 +349,7 @@ export const AuthProvider = ({ children }) => {
         window.removeEventListener('keydown', refreshActivity);
         window.removeEventListener('mousedown', refreshActivity);
         window.removeEventListener('scroll', refreshActivity);
+        window.removeEventListener('storage', handleStorageChange);
     };
   }, [checkUserStatus, disconnectWebSocket, refreshActivity]);
 

@@ -98,9 +98,14 @@ const WorkSession = () => {
 
       const storedBreak = localStorage.getItem('rems_active_break');
       if (storedBreak) {
-        const { endTime } = JSON.parse(storedBreak);
-        const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
-        setBreakTimeLeft(remaining);
+        try {
+          const { endTime } = JSON.parse(storedBreak);
+          const remaining = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+          setBreakTimeLeft(remaining);
+        } catch (e) {
+          console.error('Corrupted break state found, clearing...');
+          localStorage.removeItem('rems_active_break');
+        }
       }
     }, 100); // 0.1 second ticks
 
