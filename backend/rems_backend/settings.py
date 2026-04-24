@@ -382,12 +382,13 @@ ROOT_URLCONF = 'rems_backend.urls'
 WSGI_APPLICATION = 'rems_backend.wsgi.application'
 ASGI_APPLICATION = 'rems_backend.asgi.application'
 
-# ─── DATABASE (SQLITE - FREE) ─────────────────────────────────
+# ─── DATABASE (DYNAMIC - SQLITE FOR DEV / MYSQL FOR PROD) ─────
+import dj_database_url
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default=f"sqlite:///{BASE_DIR}/db.sqlite3",
+        conn_max_age=600
+    )
 }
 
 AUTH_USER_MODEL = 'core.User'
@@ -430,12 +431,22 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# ─── CHANNELS (LIMITED SUPPORT ON RENDER) ─────────────────────
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer",
-    },
-}
+# ─── CHANNELS (REDIS FOR PROD / IN-MEMORY FOR DEV) ────────────
+if os.getenv('REDIS_URL'):
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {
+                "hosts": [os.getenv('REDIS_URL')],
+            },
+        },
+    }
+else:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels.layers.InMemoryChannelLayer",
+        },
+    }
 
 # ─── SECURITY (SAFE DEFAULTS) ─────────────────────────────────
 SESSION_COOKIE_HTTPONLY = True
