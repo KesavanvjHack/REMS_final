@@ -414,6 +414,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
+# Allow Netlify and Render domains for CSRF
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.onrender.com",
+    "https://*.netlify.app",
+]
+
+
 # ─── REST FRAMEWORK ───────────────────────────────────────────
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -452,8 +459,6 @@ else:
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 
-# ─── TRUSTED ORIGINS (Render domain) ─────────────────────────
-CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', 'https://*.onrender.com').split(',')
 
 # ─── LOGGING (show errors in Render logs even with DEBUG=False)
 LOGGING = {
