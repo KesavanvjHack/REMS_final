@@ -1,7 +1,7 @@
 asgiref==3.11.1
 attrs==25.4.0
-autobahn==25.12.2
-Automat==25.4.16
+autobahn==24.4.2
+Automat==24.4.16
 cbor2==5.8.0
 cffi==2.0.0
 channels==4.3.2
