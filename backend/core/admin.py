@@ -11,7 +11,12 @@ from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 from import_export.admin import ImportExportModelAdmin as BaseImportExportModelAdmin
 from import_export.admin import ExportMixin as BaseExportMixin
-from unfold.contrib.import_export.forms import ImportForm, ExportForm, SelectableFieldsExportForm
+
+# Safe import: unfold.contrib.import_export forms are only available in newer versions
+try:
+    from unfold.contrib.import_export.forms import ImportForm, ExportForm
+except ImportError:
+    from import_export.forms import ImportForm, ExportForm
 
 from unfold.contrib.filters.admin import (
     DropdownFilter,
@@ -55,6 +60,7 @@ class ImportExportModelAdmin(BaseImportExportModelAdmin, ModelAdmin):
 
 class ExportMixin(BaseExportMixin, ModelAdmin):
     export_form_class = ExportForm
+
 
 
 # ─── Custom Actions ───────────────────────────────────────────────────────────
