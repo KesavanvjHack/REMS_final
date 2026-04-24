@@ -1,4 +1,5 @@
 services:
+  # ─── BACKEND (Django) ──────────────────────────────────────
   - type: web
     name: rems-backend
     runtime: python
@@ -14,3 +15,29 @@ services:
         generateValue: true
       - key: ALLOWED_HOSTS
         value: "*"
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: rems-redis
+          property: connectionString
+
+  # ─── FRONTEND (React/Vite) ──────────────────────────────────
+  - type: static
+    name: rems-frontend
+    rootDir: frontend
+    buildCommand: "npm install && npm run build"
+    publishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://rems-backend-5tev.onrender.com/api
+      - key: VITE_WS_URL
+        value: wss://rems-backend-5tev.onrender.com
+    routes:
+      - type: rewrite
+        source: "/*"
+        destination: "/index.html"
+
+  # ─── REDIS (For WebSockets) ────────────────────────────────
+  - type: redis
+    name: rems-redis
+    ipAllowList: [] # Only allow internal connections
