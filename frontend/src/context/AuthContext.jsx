@@ -102,7 +102,14 @@ export const AuthProvider = ({ children }) => {
     }
 
     try {
-      const wsBase = import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+      let wsBase = import.meta.env.VITE_WS_URL;
+      if (!wsBase) {
+          // If WS URL isn't set, deduce it from API URL or fallback to localhost
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+          const urlObj = new URL(apiUrl);
+          wsBase = `${urlObj.protocol === 'https:' ? 'wss:' : 'ws:'}//${urlObj.host}`;
+      }
+      
       const ws = new WebSocket(`${wsBase}/ws/status/`);
       wsRef.current = ws;
       
