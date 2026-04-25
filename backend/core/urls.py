@@ -8,7 +8,7 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     LoginView, LogoutView, MeView, ChangePasswordView,
-    RequestOTPView, VerifyOTPView, RegisterProfileView,
+    RequestOTPView, VerifyOTPView, RegisterProfileView, DebugDBView,
     UserViewSet, DepartmentViewSet,
     AttendanceViewSet, WorkSessionView, BreakSessionView,
     IdleView, SyncSessionView, RealTimeStatusView, TeamStatusView, TeamTimesheetView,
@@ -77,6 +77,7 @@ urlpatterns = [
     # Export (Module 16)
     path('export/', ExportView.as_view(), name='export'),
 
+    path('debug-db/', DebugDBView.as_view(), name='debug-db'),
     # ViewSet routes
     path('', include(router.urls)),
 ]

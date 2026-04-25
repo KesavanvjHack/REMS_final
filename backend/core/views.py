@@ -1940,3 +1940,21 @@ class ScreenCaptureViewSet(viewsets.ModelViewSet):
 
         serializer = self.get_serializer(latest_captures, many=True)
         return Response(serializer.data)
+
+from django.core.management import call_command
+import traceback
+
+class DebugDBView(APIView):
+    permission_classes = [AllowAny]
+    def get(self, request):
+        try:
+            print("RUNNING ON-DEMAND MIGRATIONS VIA API")
+            call_command('migrate', '--noinput')
+            return Response({'status': 'Migration successful!'})
+        except Exception as e:
+            return Response({
+                'status': 'Migration failed',
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            }, status=500)
+
