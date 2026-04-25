@@ -1,5 +1,5 @@
 import { useContext, lazy, Suspense } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthContext } from './context/AuthContext';
 import { Toaster, ToastBar, toast } from 'react-hot-toast';
 import { XMarkIcon } from '@heroicons/react/24/solid';
