@@ -459,6 +459,10 @@ else:
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = True
 
+# ─── EMAIL (PRINT TO CONSOLE FOR TESTING) ──────────────────────
+# Prevents 500 Error when sending OTPs without an SMTP server
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
 
 # ─── LOGGING (show errors in Render logs even with DEBUG=False)
 LOGGING = {
