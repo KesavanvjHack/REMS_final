@@ -4,7 +4,6 @@ import { AuthContext } from './context/AuthContext';
 import { Toaster, ToastBar, toast } from 'react-hot-toast';
 import { XMarkIcon } from '@heroicons/react/24/solid';
 import { AuthProvider } from './context/AuthContext';
-import { ScreenShareProvider } from './context/ScreenShareContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
 // Layouts & Auth
@@ -85,7 +84,6 @@ function App() {
   return (
     <Router>
       <AuthProvider>
-        <ScreenShareProvider>
         <Toaster position="top-right" />
         <Suspense fallback={<GlobalLoading />}>
           <Routes>
@@ -143,7 +141,6 @@ function App() {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
-        </ScreenShareProvider>
       </AuthProvider>
     </Router>
   );

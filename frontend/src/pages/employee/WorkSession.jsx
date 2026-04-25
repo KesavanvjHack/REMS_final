@@ -4,8 +4,6 @@ import toast from 'react-hot-toast';
 import { PlayIcon, StopIcon, PauseIcon, CameraIcon } from '@heroicons/react/24/solid';
 import { ClockIcon, InformationCircleIcon } from '@heroicons/react/24/outline';
 import { AuthContext } from '../../context/AuthContext';
-import useWebRTC from '../../hooks/useWebRTC';
-
 const formatTime12h = (timeStr) => {
   if (!timeStr) return '';
   const [h, m] = timeStr.split(':').map(Number);
@@ -16,7 +14,6 @@ const formatTime12h = (timeStr) => {
 
 const WorkSession = () => {
   const { policy, user, status, setStatus, sendJson } = useContext(AuthContext);
-  const { startSharing, stopSharing: stopWebRTC, isSharing, stream } = useWebRTC();
   const [loading, setLoading] = useState(true);
   const [now, setNow] = useState(new Date());
   const [breakType, setBreakType] = useState('lunch');
