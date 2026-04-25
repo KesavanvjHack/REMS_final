@@ -22,7 +22,6 @@ const TaskProjectHub = lazy(() => import('./pages/admin/TaskProjectHub'));
 const SystemSettings = lazy(() => import('./pages/admin/SystemSettings'));
 const OrganizationManagement = lazy(() => import('./pages/admin/OrganizationManagement'));
 const AttendanceHub = lazy(() => import('./pages/admin/AttendanceHub'));
-const LiveMonitorPage = lazy(() => import('./components/admin/LiveMonitorPage'));
 
 // Manager Pages
 const ManagerDashboard = lazy(() => import('./pages/manager/Dashboard'));
@@ -130,11 +129,6 @@ function App() {
               <Route path="/employee/documents" element={<MyDocuments />} />
               <Route path="/employee/logs" element={<ActivityLogs />} />
               <Route path="/employee/expenses" element={<Expenses />} />
-            </Route>
-            
-            {/* Live Monitoring Route */}
-            <Route element={<ProtectedRoute allowedRoles={['admin', 'manager']} />}>
-              <Route path="/live-monitor" element={<LiveMonitorPage />} />
             </Route>
             
             {/* 404 Fallback */}

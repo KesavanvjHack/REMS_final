@@ -3,7 +3,7 @@ import { AuthContext } from '../context/AuthContext';
 import { ArrowRightOnRectangleIcon, BellIcon, UsersIcon, Bars3Icon } from '@heroicons/react/24/outline';
 import api from '../api/axios';
 import StatusBadge from './StatusBadge';
-import LiveBadge from './employee/LiveBadge';
+
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { format, isToday, isYesterday } from 'date-fns';
@@ -333,7 +333,7 @@ const TopBar = ({ onMenuClick }) => {
         )}
 
         <StatusBadge status={currentStatus} />
-        <LiveBadge />
+
         
         {user && (
           <div className="relative">
