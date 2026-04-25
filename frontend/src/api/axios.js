@@ -1,7 +1,12 @@
 import axios from 'axios';
 
 // Base URL for Django Backend (uses env var in production, localhost in dev)
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+let BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+
+// Foolproof fix: Automatically ensure /api is at the end of the URL
+if (BASE_URL && !BASE_URL.endsWith('/api') && !BASE_URL.endsWith('/api/')) {
+  BASE_URL = BASE_URL.replace(/\/+$/, '') + '/api';
+}
 
 const api = axios.create({
   baseURL: BASE_URL,
