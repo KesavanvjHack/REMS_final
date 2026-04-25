@@ -10,13 +10,24 @@ const api = axios.create({
   },
 });
 
-// Request Interceptor: Attach Access Token
+// Request Interceptor: Attach Access Token and Fix URLs
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('access_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // Fix absolute path stripping baseURL issue in Axios
+    if (config.url && config.url.startsWith('/')) {
+      config.url = config.url.substring(1);
+    }
+
+    // Ensure baseURL ends with a slash
+    if (config.baseURL && !config.baseURL.endsWith('/')) {
+      config.baseURL += '/';
+    }
+
     return config;
   },
   (error) => Promise.reject(error)
